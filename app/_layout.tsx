@@ -11,16 +11,20 @@ import { DISPLAY_FONT, colors } from '@/ui/theme';
 
 export default function RootLayout() {
   // Every title and heading is set in Minera, so hold the first frame until it
-  // is ready rather than flashing the system face and reflowing.
-  const [fontsLoaded] = useFonts({
+  // is ready rather than flashing the system face and reflowing. If it fails to
+  // load we render anyway on the fallback face — a missing font is a cosmetic
+  // problem, and blocking on it would leave the player staring at an empty
+  // screen.
+  const [fontsLoaded, fontError] = useFonts({
     [DISPLAY_FONT]: require('../assets/fonts/Minera.otf'),
   });
+  const ready = fontsLoaded || !!fontError;
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <SafeAreaProvider>
         <StatusBar style="light" />
-        {fontsLoaded ? (
+        {ready ? (
           <Stack
             screenOptions={{
               headerShown: false,
