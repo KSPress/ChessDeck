@@ -177,6 +177,12 @@ export type Effect =
   | { kind: 'root_enemy'; turns: number }
   | { kind: 'grant_trait'; trait: Trait }
   | { kind: 'extra_move'; count: number }
+  /**
+   * Grants extra moves that are only paid out on a capture, as printed:
+   * "move a piece, capture, then move it again". Unconditional extra moves let
+   * a leaping Crown rush the enemy throne before the game has begun.
+   */
+  | { kind: 'strike_on_capture'; count: number }
   /** Moves a friendly piece to any empty square in the caster's own half. */
   | { kind: 'teleport_friendly' }
   /** Deploys a piece for free onto each chosen empty muster square. */
@@ -280,6 +286,12 @@ export interface PieceInstance {
   /** Present only on the royal piece. */
   crownId?: CrownId;
   hasMoved: boolean;
+  /**
+   * True for the turn a piece is mustered. Without this a player could deploy a
+   * long-reaching piece and strike with it the same turn, which on a 6x6 board
+   * means sniping the enemy Crown out of nowhere.
+   */
+  sick: boolean;
   /** Turns remaining during which this piece cannot move. */
   rooted: number;
   /** Turns remaining during which this piece cannot be captured. */
@@ -308,6 +320,8 @@ export interface PlayerState {
   strideUntilTurn: number;
   /** Once-per-turn faction passives that have already fired this turn. */
   passiveUsedOnTurn: number;
+  /** Extra moves owed on this turn's next captures. Cleared each turn. */
+  pendingStrikes: number;
 }
 
 export type MatchStatus = 'active' | 'gold_wins' | 'shadow_wins' | 'draw';
@@ -328,6 +342,12 @@ export interface MatchState {
   /** Each turn allows one move action and one card action. */
   movesLeft: number;
   cardsLeft: number;
+  /**
+   * Set when a capture has earned another swing: "move a piece, capture, then
+   * move *it* again". Only this piece may take the extra move, which is what
+   * keeps Bloodlust a combat engine rather than free tempo.
+   */
+  mustMoveUid: number | null;
   status: MatchStatus;
   seed: number;
   log: LogEntry[];

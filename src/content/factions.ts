@@ -45,9 +45,9 @@ export const FACTIONS: FactionDef[] = [
     paper: '#4B795B',
     ink: '#FFFFFF',
     crownId: 'elf_queen',
-    passive: { kind: 'regrowth', amount: 1 },
+    passive: { kind: 'regrowth', amount: 2 },
     passiveName: 'Regrowth',
-    passiveBlurb: 'Gain 1 aether whenever one of your pieces is captured, and it joins your graveyard.',
+    passiveBlurb: 'Gain 2 aether whenever one of your pieces is captured, and it joins your graveyard.',
     blurb:
       'Nothing green loses is gone for long. Bodies return from the graveyard and losses fund the next play.',
   },
@@ -61,7 +61,7 @@ export const FACTIONS: FactionDef[] = [
     crownId: 'gnome_engineer',
     passive: { kind: 'explosive_capture' },
     passiveName: 'Explosive Capture',
-    passiveBlurb: 'When one of your pieces captures, everything diagonally beside the target is destroyed.',
+    passiveBlurb: 'When one of your pieces captures, enemy pieces diagonally beside the target are destroyed too.',
     blurb:
       'Fewer pieces, louder ones. Yellow turns a single capture into a crater — and does not always mind who is standing in it.',
   },

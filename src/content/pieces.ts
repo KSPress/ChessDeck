@@ -116,7 +116,7 @@ const ROSTER: Record<FactionId, Entry[]> = {
       rules: [{ kind: 'leap', offsets: LEAP_TWO_OFFSETS }],
       cost: 3,
       value: 3,
-      glyph: '⚡',
+      glyph: '⍟',
     },
   ],
   /* -------------------------------------------------------------- */

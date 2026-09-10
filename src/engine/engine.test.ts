@@ -37,6 +37,15 @@ function bareBoard(state: MatchState): MatchState {
   return state;
 }
 
+/** Strips the board to a single crown, so its printed movement is unmasked. */
+function soloCrown(state: MatchState, side: Side): PieceInstance {
+  for (let square = 0; square < state.board.length; square += 1) {
+    const piece = state.board[square];
+    if (piece && !(piece.owner === side && piece.crownId)) state.board[square] = null;
+  }
+  return findCrown(state, side) as PieceInstance;
+}
+
 function place(state: MatchState, pieceId: string, owner: Side, square: Square): PieceInstance {
   const def = getPiece(pieceId);
   const piece: PieceInstance = {
@@ -47,6 +56,7 @@ function place(state: MatchState, pieceId: string, owner: Side, square: Square):
     traits: [...def.traits],
     grantedRules: [],
     hasMoved: false,
+    sick: false,
     rooted: 0,
     shielded: 0,
     submerged: 0,
@@ -93,8 +103,8 @@ describe('content registry', () => {
 
 describe('crown movement matches the printed cards', () => {
   it('Orc Chieftain moves the knight’s crooked charge', () => {
-    const state = bareBoard(newMatch('starter_red'));
-    const crown = findCrown(state, 'gold') as PieceInstance;
+    const state = newMatch('starter_red');
+    const crown = soloCrown(state, 'gold');
     // From c1 the knight's move reaches exactly these four squares on a 6x6.
     expect(targetsOf(state, crown)).toEqual(
       [squareOf(1, 2), squareOf(3, 2), squareOf(0, 1), squareOf(4, 1)].sort((a, b) => a - b),
@@ -102,14 +112,14 @@ describe('crown movement matches the printed cards', () => {
   });
 
   it('Dwarf Throne only shuffles one square left or right', () => {
-    const state = bareBoard(newMatch('starter_blue'));
-    const crown = findCrown(state, 'gold') as PieceInstance;
+    const state = newMatch('starter_blue');
+    const crown = soloCrown(state, 'gold');
     expect(targetsOf(state, crown)).toEqual([squareOf(1, 0), squareOf(3, 0)].sort((a, b) => a - b));
   });
 
   it('Elf Queen rides the full queen’s lines', () => {
-    const state = bareBoard(newMatch('starter_green'));
-    const crown = findCrown(state, 'gold') as PieceInstance;
+    const state = newMatch('starter_green');
+    const crown = soloCrown(state, 'gold');
     const targets = targetsOf(state, crown);
     expect(targets).toContain(squareOf(2, 5));
     expect(targets).toContain(squareOf(5, 3));
@@ -118,8 +128,8 @@ describe('crown movement matches the printed cards', () => {
   });
 
   it('Gnome Engineer takes a single step in any direction', () => {
-    const state = bareBoard(newMatch('starter_yellow'));
-    const crown = findCrown(state, 'gold') as PieceInstance;
+    const state = newMatch('starter_yellow');
+    const crown = soloCrown(state, 'gold');
     expect(targetsOf(state, crown)).toEqual(
       [squareOf(1, 0), squareOf(3, 0), squareOf(1, 1), squareOf(2, 1), squareOf(3, 1)].sort(
         (a, b) => a - b,
@@ -194,9 +204,9 @@ describe('deck validation', () => {
     expect(result.errors.some((e) => /Orc Peon/.test(e))).toBe(true);
   });
 
-  it('gives the Dwarf Throne a bigger budget than the Elf Queen', () => {
+  it('gives the Dwarf Throne a bigger budget than the other Crowns', () => {
     expect(validateDeck(deckFor('starter_blue')).musterLimit).toBe(22);
-    expect(validateDeck(deckFor('starter_green')).musterLimit).toBe(18);
+    expect(validateDeck(deckFor('starter_green')).musterLimit).toBe(20);
   });
 
   it('blocks additions that break the budget, the copy limit or the colour', () => {
@@ -208,15 +218,28 @@ describe('deck validation', () => {
 });
 
 describe('board setup', () => {
-  it('opens with a crown flanked by two of that faction’s own pawns', () => {
+  it('opens with a crown shielded by three of that faction’s own pawns', () => {
     const state = createMatch({
       goldDeck: deckFor('starter_red'),
       shadowDeck: deckFor('starter_blue'),
       seed: 1,
     });
     expect(findCrown(state, 'gold')?.square).toBe(throneSquare('gold'));
-    expect(state.board.filter((p) => p?.pieceId === 'red_pawn')).toHaveLength(2);
-    expect(state.board.filter((p) => p?.pieceId === 'blue_pawn')).toHaveLength(2);
+    expect(state.board.filter((p) => p?.pieceId === 'red_pawn')).toHaveLength(3);
+    expect(state.board.filter((p) => p?.pieceId === 'blue_pawn')).toHaveLength(3);
+  });
+
+  it('shields the Crown so an Elf Queen cannot snipe it down the open file', () => {
+    // The thrones face each other on the c-file; the pawn shield is what stops
+    // a full-reach Crown from ending the match on turn two.
+    const state = createMatch({
+      goldDeck: deckFor('starter_red'),
+      shadowDeck: deckFor('starter_green'),
+      seed: 4,
+    });
+    const goldCrown = findCrown(state, 'gold') as PieceInstance;
+    const elfQueen = findCrown(state, 'shadow') as PieceInstance;
+    expect(generateMovesForPiece(state, elfQueen).map((m) => m.to)).not.toContain(goldCrown.square);
   });
 
   it('deals both players an opening hand, widened by the Barrow King', () => {
@@ -378,13 +401,31 @@ describe('action economy', () => {
     state = applyAction(state, { type: 'deploy', handIndex, to: deployTo });
     expect(state.active).toBe('gold');
     expect(state.cardsLeft).toBe(0);
-    expect(checkAction(state, { type: 'deploy', handIndex: 0, to: squareOf(1, 1) }).ok).toBe(false);
+    expect(checkAction(state, { type: 'deploy', handIndex: 0, to: squareOf(0, 0) }).ok).toBe(false);
 
-    // Whatever piece landed there, take its first legal move.
-    const destination = movesFrom(state, deployTo)[0] as Square;
+    // Move one of the pawns that started the match, not the fresh arrival.
+    const pawnSquare = squareOf(1, 1);
+    const destination = movesFrom(state, pawnSquare)[0] as Square;
     expect(destination).toBeDefined();
-    state = applyAction(state, { type: 'move', from: deployTo, to: destination });
+    state = applyAction(state, { type: 'move', from: pawnSquare, to: destination });
     expect(state.active).toBe('shadow');
+  });
+
+  it('will not let a freshly mustered piece act on the turn it arrives', () => {
+    let state = newMatch();
+    const handIndex = state.players.gold.hand.findIndex((id) => getCard(id).kind === 'piece');
+    const deployTo = squareOf(0, 1);
+
+    state = applyAction(state, { type: 'deploy', handIndex, to: deployTo });
+    expect(pieceAt(state, deployTo)?.sick).toBe(true);
+    expect(movesFrom(state, deployTo)).toEqual([]);
+
+    // It shakes off the sickness in time for its owner's next turn.
+    state = applyAction(state, { type: 'endTurn' });
+    state = applyAction(state, { type: 'endTurn' });
+    expect(state.active).toBe('gold');
+    expect(pieceAt(state, deployTo)?.sick).toBe(false);
+    expect(movesFrom(state, deployTo).length).toBeGreaterThan(0);
   });
 
   it('refills the hand by cycling the played card to the back of the deck', () => {
@@ -421,6 +462,26 @@ describe('action economy', () => {
   });
 });
 
+describe('crown safety', () => {
+  it('will not let a Crown step onto a square the enemy threatens', () => {
+    const state = bareBoard(newMatch('starter_yellow', 'starter_green'));
+    const crown = findCrown(state, 'gold') as PieceInstance;
+    // A rook on the d-file covers d2, which is one of the Crown's king steps.
+    place(state, 'green_rook', 'shadow', squareOf(3, 4));
+
+    const targets = targetsOf(state, crown);
+    expect(targets).not.toContain(squareOf(3, 1));
+    expect(targets).toContain(squareOf(1, 1));
+  });
+
+  it('still allows a Crown to capture an undefended attacker', () => {
+    const state = bareBoard(newMatch('starter_yellow', 'starter_green'));
+    const crown = findCrown(state, 'gold') as PieceInstance;
+    place(state, 'green_pawn', 'shadow', squareOf(1, 1));
+    expect(targetsOf(state, crown)).toContain(squareOf(1, 1));
+  });
+});
+
 describe('win conditions', () => {
   it('ends the match the moment a crown is captured', () => {
     const state = bareBoard(newMatch());
@@ -453,6 +514,33 @@ describe('faction passives', () => {
     expect(after.movesLeft).toBe(1);
   });
 
+  it('Bloodlust hands the extra move to the striker, not to the whole army', () => {
+    const state = bareBoard(newMatch('starter_red'));
+    place(state, 'red_signature', 'gold', squareOf(2, 2));
+    place(state, 'red_signature', 'gold', squareOf(5, 1));
+    place(state, 'green_pawn', 'shadow', squareOf(3, 3));
+
+    const after = applyAction(state, { type: 'move', from: squareOf(2, 2), to: squareOf(3, 3) });
+    expect(after.movesLeft).toBe(1);
+    expect(after.mustMoveUid).toBe(pieceAt(after, squareOf(3, 3))?.uid);
+    // The other Raider cannot borrow the swing that the striker earned.
+    expect(checkAction(after, { type: 'move', from: squareOf(5, 1), to: squareOf(4, 2) }).ok).toBe(false);
+    expect(movesFrom(after, squareOf(5, 1))).toEqual([]);
+    expect(movesFrom(after, squareOf(3, 3)).length).toBeGreaterThan(0);
+  });
+
+  it('Explosive Capture spares the gnome’s own ranks', () => {
+    const state = bareBoard(newMatch('starter_yellow'));
+    place(state, 'yellow_rook', 'gold', squareOf(0, 3));
+    place(state, 'green_pawn', 'shadow', squareOf(3, 3));
+    place(state, 'green_pawn', 'shadow', squareOf(2, 2));
+    place(state, 'yellow_pawn', 'gold', squareOf(4, 4)); // friendly, on a diagonal
+
+    const after = applyAction(state, { type: 'move', from: squareOf(0, 3), to: squareOf(3, 3) });
+    expect(pieceAt(after, squareOf(2, 2))).toBeNull();
+    expect(pieceAt(after, squareOf(4, 4))).not.toBeNull();
+  });
+
   it('Shieldwall armors a blue piece only while it stands beside a friend', () => {
     const state = bareBoard(newMatch('starter_green', 'starter_blue'));
     const lone = place(state, 'blue_pawn', 'shadow', squareOf(5, 5));
@@ -466,14 +554,14 @@ describe('faction passives', () => {
     expect(targetsOf(state, pawn)).not.toContain(squareOf(5, 5));
   });
 
-  it('Regrowth pays green an aether for every piece it loses', () => {
+  it('Regrowth pays green two aether for every piece it loses', () => {
     const state = bareBoard(newMatch('starter_yellow', 'starter_green'));
     place(state, 'yellow_bishop', 'gold', squareOf(2, 2));
     place(state, 'green_pawn', 'shadow', squareOf(4, 4));
     const before = state.players.shadow.aether;
 
     const after = applyAction(state, { type: 'move', from: squareOf(2, 2), to: squareOf(4, 4) });
-    expect(after.players.shadow.aether).toBe(before + 1);
+    expect(after.players.shadow.aether).toBe(before + 2);
     expect(after.players.shadow.graveyard).toContain('green_pawn');
   });
 
@@ -502,18 +590,35 @@ describe('faction passives', () => {
 });
 
 describe('faction action cards', () => {
-  it('Double Strike buys a second move action', () => {
+  it('Double Strike pays its extra move only when the strike actually lands', () => {
     let state = bareBoard(newMatch('starter_red'));
     place(state, 'red_signature', 'gold', squareOf(0, 1));
-    place(state, 'red_signature', 'gold', squareOf(4, 1));
+    place(state, 'green_pawn', 'shadow', squareOf(2, 3));
     state.players.gold.hand = ['red_double_strike'];
     state.players.gold.aether = 5;
 
     state = applyAction(state, { type: 'cast', handIndex: 0, targets: [] });
-    expect(state.movesLeft).toBe(2);
-    state = applyAction(state, { type: 'move', from: squareOf(0, 1), to: squareOf(1, 2) });
+    // Nothing is granted up front — the move count is untouched.
+    expect(state.movesLeft).toBe(1);
+    expect(state.players.gold.pendingStrikes).toBe(1);
+
+    state = applyAction(state, { type: 'move', from: squareOf(0, 1), to: squareOf(2, 3) });
     expect(state.active).toBe('gold');
-    state = applyAction(state, { type: 'move', from: squareOf(4, 1), to: squareOf(3, 2) });
+    expect(state.players.gold.pendingStrikes).toBe(0);
+    // The capture spent one move and paid back two: the strike it was bought
+    // for, plus red's own Bloodlust. Stacking them is the point of the faction.
+    expect(state.movesLeft).toBe(2);
+  });
+
+  it('Double Strike gives nothing away on a quiet move', () => {
+    let state = bareBoard(newMatch('starter_red'));
+    place(state, 'red_signature', 'gold', squareOf(0, 1));
+    state.players.gold.hand = ['red_double_strike'];
+    state.players.gold.aether = 5;
+
+    state = applyAction(state, { type: 'cast', handIndex: 0, targets: [] });
+    state = applyAction(state, { type: 'move', from: squareOf(0, 1), to: squareOf(1, 2) });
+    // A quiet move ends the turn: no capture, no second swing.
     expect(state.active).toBe('shadow');
   });
 
@@ -656,6 +761,6 @@ describe('legal action enumeration', () => {
 describe('material scoring', () => {
   it('counts pieces but not crowns', () => {
     const state = newMatch();
-    expect(materialOf(state, 'gold')).toBe(2 * getPiece('green_pawn').value);
+    expect(materialOf(state, 'gold')).toBe(3 * getPiece('green_pawn').value);
   });
 });

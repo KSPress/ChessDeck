@@ -35,7 +35,7 @@ export const COSMETICS: Cosmetic[] = [
     blurb: 'The default field of play. Cold stone, warm gold.',
     rarity: 'common',
     price: { currency: 'coins', amount: 0 },
-    theme: { light: '#2E2A44', dark: '#211E33', accent: '#F0B429', frame: '#0B0A14' },
+    theme: { light: '#3A3457', dark: '#1E1B2E', accent: '#F0B429', frame: '#0B0A14' },
   },
   {
     id: 'board_verdant',

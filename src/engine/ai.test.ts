@@ -82,6 +82,7 @@ describe('ai', () => {
       traits: [],
       grantedRules: [],
       hasMoved: true,
+      sick: false,
       rooted: 0,
       shielded: 0,
       submerged: 0,

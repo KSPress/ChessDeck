@@ -18,11 +18,11 @@ export const CROWNS: CrownDef[] = [
     powerName: 'Warcry',
     powerCost: 2,
     powerCooldown: 3,
-    power: { effect: { kind: 'extra_move', count: 1 }, slots: [] },
+    power: { effect: { kind: 'strike_on_capture', count: 2 }, slots: [] },
     modifiers: {},
     code: '1R',
     blurb:
-      'A crown that hunts. Leaping the knight’s path puts him in reach of things a king should not be near — which is the point.',
+      'A crown that hunts. Leaping the knight’s path puts him in reach of things a king should not be near — which is the point. Warcry pays out an extra move on each of the next two captures, so it rewards a line of blood rather than a straight run at the throne.',
   },
   {
     id: 'dwarf_throne',
@@ -41,7 +41,9 @@ export const CROWNS: CrownDef[] = [
         range: 1,
       },
     ],
-    traits: ['royal'],
+    // Plated as well as immobile: he can barely step aside, so chaff must not
+    // be able to topple him.
+    traits: ['royal', 'armored'],
     powerName: 'Stoneform',
     powerCost: 2,
     powerCooldown: 3,
@@ -64,10 +66,10 @@ export const CROWNS: CrownDef[] = [
     powerCost: 2,
     powerCooldown: 3,
     power: { effect: { kind: 'restore_grave' }, slots: ['empty_muster'] },
-    modifiers: { musterLimit: 18 },
+    modifiers: { musterLimit: 20 },
     code: '1R',
     blurb:
-      'The most mobile crown in the game, paid for with the tightest muster budget. She fights, and she brings the fallen back to do it again.',
+      'The most mobile crown in the game — and the most exposed, since losing her loses the match. She fights, and she brings the fallen back to do it again.',
   },
   {
     id: 'gnome_engineer',

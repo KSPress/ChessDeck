@@ -42,9 +42,9 @@ export const STARTER_DECKS: Deck[] = [
     cards: [
       'green_pawn',
       'green_pawn',
-      'green_pawn',
-      'green_signature',
-      'green_signature',
+      'green_knight',
+      'green_knight',
+      'green_rook',
       'green_queen',
       'green_restore',
       'green_roots',
@@ -57,12 +57,12 @@ export const STARTER_DECKS: Deck[] = [
     cards: [
       'yellow_pawn',
       'yellow_pawn',
-      'yellow_pawn',
       'yellow_signature',
       'yellow_signature',
+      'yellow_rook',
       'yellow_knight',
+      'yellow_detonate',
       'yellow_chaos',
-      'yellow_lightning',
     ],
   },
   {
@@ -77,7 +77,7 @@ export const STARTER_DECKS: Deck[] = [
       'purple_signature',
       'purple_queen',
       'purple_grave_leap',
-      'purple_raise',
+      'purple_restless',
     ],
   },
 ];

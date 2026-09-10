@@ -77,9 +77,9 @@ export function effectiveRules(state: MatchState, piece: PieceInstance): MoveRul
   return piece.grantedRules.length > 0 ? [...base, ...piece.grantedRules] : base;
 }
 
-/** Rooted and bunkered pieces stay put. */
+/** Freshly mustered, rooted and bunkered pieces all stay put. */
 export function canMove(piece: PieceInstance): boolean {
-  return piece.rooted <= 0 && piece.submerged <= 0;
+  return !piece.sick && piece.rooted <= 0 && piece.submerged <= 0;
 }
 
 function wouldPromote(piece: PieceInstance, to: Square): boolean {
@@ -89,6 +89,12 @@ function wouldPromote(piece: PieceInstance, to: Square): boolean {
 /**
  * Every legal move for one piece. A piece with several movement rules
  * contributes the union of them.
+ *
+ * A Crown may never step onto a square the enemy threatens — chess's rule
+ * against moving into check. Losing the Crown loses the match outright and
+ * there is no check warning, so without this a single mistimed tap ends the
+ * game; with it, you can still lose your Crown by failing to answer a threat,
+ * which keeps Crown capture a live win condition.
  */
 export function generateMovesForPiece(state: MatchState, piece: PieceInstance): MoveOption[] {
   if (state.status !== 'active') return [];
@@ -97,9 +103,13 @@ export function generateMovesForPiece(state: MatchState, piece: PieceInstance): 
   const moves: MoveOption[] = [];
   const seen = new Set<Square>();
   const ethereal = piece.traits.includes('ethereal');
+  const forbidden = piece.crownId
+    ? threatenedSquares(state, piece.owner === 'gold' ? 'shadow' : 'gold')
+    : null;
 
   const add = (to: Square, capture: PieceInstance | null) => {
     if (seen.has(to)) return;
+    if (forbidden?.has(to)) return;
     seen.add(to);
     moves.push({ from: piece.square, to, capture, promotes: wouldPromote(piece, to) });
   };
@@ -166,13 +176,26 @@ export function findCrown(state: MatchState, side: Side): PieceInstance | null {
 }
 
 /**
- * Squares a side threatens, ignoring whether a capture there is currently
- * legal. Used by the AI to score danger rather than to validate moves.
+ * Whether a piece will be free to move once its owner's next turn begins.
+ *
+ * This is deliberately *not* `canMove`. Summoning sickness always clears at the
+ * owner's turn start, and rooting ticks down by one, so a piece that cannot
+ * move right now may well be able to move by the time it matters. Judging
+ * danger with `canMove` makes freshly mustered enemies look harmless and
+ * invites you to park your Crown right next to one.
+ */
+function willBeFreeNextTurn(piece: PieceInstance): boolean {
+  return piece.rooted <= 1 && piece.submerged <= 1;
+}
+
+/**
+ * Squares a side will threaten on its next turn, ignoring whether a capture
+ * there is currently legal. Used to score danger, not to validate moves.
  */
 export function threatenedSquares(state: MatchState, side: Side): Set<Square> {
   const threatened = new Set<Square>();
   for (const piece of piecesOf(state, side)) {
-    if (!canMove(piece)) continue;
+    if (!willBeFreeNextTurn(piece)) continue;
     for (const rule of effectiveRules(state, piece)) {
       if (rule.kind === 'pawn') {
         for (const df of [-1, 1]) {

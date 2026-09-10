@@ -1,6 +1,7 @@
 import {
   ALL_DIRECTIONS,
   DIAGONAL,
+  forwardOf,
   isMusterSquare,
   isOwnHalf,
   promotionRank,
@@ -60,6 +61,7 @@ function makePlayer(side: Side, deck: Deck, rng: () => number): PlayerState {
     powerCooldown: 0,
     strideUntilTurn: 0,
     passiveUsedOnTurn: 0,
+    pendingStrikes: 0,
   };
 }
 
@@ -69,6 +71,8 @@ function spawn(
   owner: Side,
   square: Square,
   crownId?: string,
+  /** Starting pieces are battle-ready; anything mustered mid-match is not. */
+  sick = false,
 ): PieceInstance {
   const def = getPiece(pieceId);
   const piece: PieceInstance = {
@@ -79,6 +83,7 @@ function spawn(
     traits: [...def.traits],
     grantedRules: [],
     hasMoved: false,
+    sick,
     rooted: 0,
     shielded: 0,
     submerged: 0,
@@ -90,9 +95,11 @@ function spawn(
 }
 
 /**
- * Both sides open with their crown on the throne and two of their faction's
- * pawns flanking it. Everything else has to be mustered from hand, which is
- * what gives the opening turns their deckbuilding texture.
+ * Both sides open with their crown on the throne and a rank of three of their
+ * faction's own pawns in front of it. The shield matters: the thrones face each
+ * other down the same file, so without it a Crown with a queen's reach — the
+ * Elf Queen — could take the enemy Crown on turn two. Everything else has to be
+ * mustered from hand, which is what gives the opening turns their texture.
  */
 export function createMatch({ goldDeck, shadowDeck, seed = Date.now() }: MatchSetup): MatchState {
   const rng = makeRng(seed);
@@ -107,6 +114,7 @@ export function createMatch({ goldDeck, shadowDeck, seed = Date.now() }: MatchSe
     active: 'gold',
     movesLeft: 1,
     cardsLeft: 1,
+    mustMoveUid: null,
     status: 'active',
     seed,
     log: [],
@@ -120,8 +128,10 @@ export function createMatch({ goldDeck, shadowDeck, seed = Date.now() }: MatchSe
     spawn(state, crownPieceIdFor(player.crownId), side, throne, player.crownId);
     // Each faction fields its own pawn — an Orc Peon, a Dwarf Miner, and so on.
     const pawnId = `${player.factionId}_pawn`;
-    spawn(state, pawnId, side, squareOf(1, homeRank));
-    spawn(state, pawnId, side, squareOf(3, homeRank));
+    const shieldRank = homeRank + forwardOf(side);
+    for (const file of [1, 2, 3]) {
+      spawn(state, pawnId, side, squareOf(file, shieldRank));
+    }
   }
 
   // Both players are dealt an opening hand up front: the waiting player's hand
@@ -191,6 +201,7 @@ function beginTurn(state: MatchState): void {
   // Statuses tick down on their owner's turn, so a 1-turn shield covers
   // exactly the opponent's next turn.
   for (const piece of piecesOf(state, state.active)) {
+    piece.sick = false;
     if (piece.rooted > 0) piece.rooted -= 1;
     if (piece.shielded > 0) piece.shielded -= 1;
     if (piece.submerged > 0) piece.submerged -= 1;
@@ -201,10 +212,12 @@ function beginTurn(state: MatchState): void {
   }
   if (player.powerCooldown > 0) player.powerCooldown -= 1;
   player.passiveUsedOnTurn = 0;
+  player.pendingStrikes = 0;
 
   drawUp(player);
   state.movesLeft = 1;
   state.cardsLeft = 1;
+  state.mustMoveUid = null;
 }
 
 /** Total material a side has on the board, crowns excluded. */
@@ -272,7 +285,7 @@ function removePiece(state: MatchState, piece: PieceInstance): void {
     // claws its way back onto an empty muster square.
     const open = emptyMusterSquares(state, piece.owner);
     if (open.length > 0 && claimPassive(state, piece.owner)) {
-      spawn(state, piece.pieceId, piece.owner, open[0] as Square);
+      spawn(state, piece.pieceId, piece.owner, open[0] as Square, undefined, true);
       log(state, `${def.name} rises again on ${squareName(open[0] as Square)}.`);
     }
   }
@@ -300,7 +313,20 @@ function detonate(state: MatchState, centre: Square, radius: 'adjacent' | 'diago
 
 /** Yellow's signature: every capture cracks the squares diagonal to it. */
 function applyCapturePassives(state: MatchState, attacker: PieceInstance, square: Square): void {
-  const passive = getFaction(state.players[attacker.owner].factionId).passive;
+  const player = state.players[attacker.owner];
+  const passive = getFaction(player.factionId).passive;
+
+  // An extra move is only useful to a piece still standing, so a vengeful
+  // trade that killed the attacker earns nothing.
+  const survived = state.board[attacker.square]?.uid === attacker.uid;
+
+  // Strikes bought earlier this turn are paid out now, one per capture.
+  if (player.pendingStrikes > 0 && state.status === 'active' && survived) {
+    player.pendingStrikes -= 1;
+    state.movesLeft += 1;
+    state.mustMoveUid = attacker.uid;
+    log(state, 'The strike lands — move again.');
+  }
 
   if (passive.kind === 'explosive_capture') {
     for (const dir of DIAGONAL) {
@@ -308,13 +334,17 @@ function applyCapturePassives(state: MatchState, attacker: PieceInstance, square
       if (neighbour === -1) continue;
       const victim = pieceAt(state, neighbour);
       if (!victim || victim.crownId || victim.shielded > 0 || victim.submerged > 0) continue;
+      // The passive spares your own ranks — only the Detonate card, as
+      // printed, takes friend and foe alike.
+      if (victim.owner === attacker.owner) continue;
       removePiece(state, victim);
     }
     log(state, 'The capture detonates across the diagonals.');
   } else if (passive.kind === 'bloodlust' && state.status === 'active') {
     // The first piece to draw blood each turn gets to swing again.
-    if (claimPassive(state, attacker.owner)) {
+    if (survived && claimPassive(state, attacker.owner)) {
       state.movesLeft += 1;
+      state.mustMoveUid = attacker.uid;
       log(state, 'Bloodlust — the attacker may move again.');
     }
   }
@@ -488,6 +518,10 @@ function resolveEffect(
       state.movesLeft += effect.count;
       break;
 
+    case 'strike_on_capture':
+      player.pendingStrikes += effect.count;
+      break;
+
     case 'detonate':
       if (first !== undefined) detonate(state, first, effect.radius);
       break;
@@ -499,7 +533,7 @@ function resolveEffect(
     case 'restore_grave': {
       const pieceId = player.graveyard.shift();
       if (pieceId && first !== undefined) {
-        spawn(state, pieceId, side, first);
+        spawn(state, pieceId, side, first, undefined, true);
         log(state, `${getPiece(pieceId).name} returns on ${squareName(first)}.`);
       }
       break;
@@ -519,7 +553,7 @@ function resolveEffect(
     case 'summon':
       // One body per chosen square, so a two-slot card raises two levies.
       for (const square of targets) {
-        if (!pieceAt(state, square)) spawn(state, effect.pieceId, side, square);
+        if (!pieceAt(state, square)) spawn(state, effect.pieceId, side, square, undefined, true);
       }
       log(state, `${getPiece(effect.pieceId).name} x${targets.length} musters.`);
       break;
@@ -574,6 +608,10 @@ export function checkAction(state: MatchState, action: Action): Legality {
       const piece = pieceAt(state, action.from);
       if (!piece) return { ok: false, reason: 'No piece on that square.' };
       if (piece.owner !== side) return { ok: false, reason: 'That piece is not yours.' };
+      if (state.mustMoveUid !== null && piece.uid !== state.mustMoveUid) {
+        return { ok: false, reason: 'Only the piece that just struck may move again.' };
+      }
+      if (piece.sick) return { ok: false, reason: 'That piece was only just mustered.' };
       if (piece.rooted > 0) return { ok: false, reason: 'That piece is rooted.' };
       if (piece.submerged > 0) return { ok: false, reason: 'That piece is dug in.' };
       const legal = generateMovesForPiece(state, piece).some((m) => m.to === action.to);
@@ -674,6 +712,7 @@ export function applyAction(state: MatchState, action: Action): MatchState {
       next.board[action.to] = piece;
       promoteIfAble(next, piece);
       next.movesLeft -= 1;
+      next.mustMoveUid = null;
       if (captured && next.status === 'active') applyCapturePassives(next, piece, action.to);
       break;
     }
@@ -682,7 +721,7 @@ export function applyAction(state: MatchState, action: Action): MatchState {
       const card = getCard(player.hand[action.handIndex] as string);
       player.aether -= card.cost;
       cycleCard(player, action.handIndex);
-      spawn(next, (card as { pieceId: string }).pieceId, side, action.to);
+      spawn(next, (card as { pieceId: string }).pieceId, side, action.to, undefined, true);
       log(next, `${card.name} musters on ${squareName(action.to)}.`);
       next.cardsLeft -= 1;
       break;
@@ -739,6 +778,7 @@ export function legalActions(state: MatchState): Action[] {
 
   if (state.movesLeft > 0) {
     for (const piece of piecesOf(state, side)) {
+      if (state.mustMoveUid !== null && piece.uid !== state.mustMoveUid) continue;
       for (const move of generateMovesForPiece(state, piece)) {
         actions.push({ type: 'move', from: move.from, to: move.to });
       }
@@ -794,6 +834,7 @@ function expandTargets(state: MatchState, side: Side, spec: EffectSpec): Square[
 export function movesFrom(state: MatchState, square: Square): Square[] {
   const piece = pieceAt(state, square);
   if (!piece || piece.owner !== state.active || state.movesLeft <= 0) return [];
+  if (state.mustMoveUid !== null && piece.uid !== state.mustMoveUid) return [];
   if (!canMove(piece)) return [];
   return generateMovesForPiece(state, piece).map((m) => m.to);
 }

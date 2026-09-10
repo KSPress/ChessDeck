@@ -59,8 +59,15 @@ export function evaluate(state: MatchState, side: Side): number {
   const foeCrown = findCrown(state, foe);
   if (ownCrown) {
     const danger = threatenedSquares(state, foe);
-    if (danger.has(ownCrown.square)) score -= 8;
-    score -= centrality(ownCrown.square) * 0.3;
+    // Leaving the crown attacked loses outright next turn, so weight it far
+    // above any amount of material it could possibly be trading for.
+    if (danger.has(ownCrown.square)) score -= 40;
+
+    // Marching the crown upfield is how most losses actually happen: a card
+    // can conjure a threat the current danger map cannot see, and the crown is
+    // the one piece that cannot be traded. Keep it near home.
+    const homeRank = side === 'gold' ? 0 : BOARD_SIZE - 1;
+    score -= Math.abs(rankOf(ownCrown.square) - homeRank) * 1.2;
   }
   if (foeCrown) {
     const pressure = threatenedSquares(state, side);
@@ -114,8 +121,20 @@ export function chooseAction(state: MatchState, difficulty: Difficulty = 'knight
       if (after.status !== 'active' || after.active === side) continue;
 
       // Assume the opponent takes their single best immediate action.
+      //
+      // Every move reply is scored, never a truncated sample: a crown can only
+      // be taken by a move, so dropping any of them would let the AI hang its
+      // own crown to a capture it was capable of seeing. Card replies are
+      // sampled instead — there can be hundreds once multi-target effects are
+      // expanded, and none of them can end the match outright.
+      const replies = legalActions(after);
+      const considered = [
+        ...replies.filter((r) => r.type === 'move'),
+        ...replies.filter((r) => r.type !== 'move').slice(0, 20),
+      ];
+
       let worst = Number.POSITIVE_INFINITY;
-      for (const reply of legalActions(after).slice(0, 40)) {
+      for (const reply of considered) {
         const value = quickScore(after, reply, side);
         if (Number.isFinite(value) && value < worst) worst = value;
       }

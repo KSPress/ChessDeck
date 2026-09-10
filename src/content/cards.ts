@@ -57,15 +57,15 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'red_double_strike',
       name: 'Double Strike',
-      glyph: '⚔',
+      glyph: '⇉',
       cost: 2,
-      spec: { effect: { kind: 'extra_move', count: 1 }, slots: [] },
-      blurb: 'Take a second move action this turn. Move, capture, then move again.',
+      spec: { effect: { kind: 'strike_on_capture', count: 1 }, slots: [] },
+      blurb: 'Move a piece, capture with it, then move again. No capture, no second swing.',
     },
     {
       id: 'red_whirlwind',
       name: 'Whirlwind',
-      glyph: '🌀',
+      glyph: '✳',
       cost: 3,
       spec: { effect: { kind: 'detonate', radius: 'adjacent' }, slots: ['friendly_non_crown'] },
       blurb: 'Sacrifice one of your own pieces to destroy everything around it. Crowns are spared.',
@@ -73,7 +73,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'red_rage',
       name: 'Rage of the Rook',
-      glyph: '🔥',
+      glyph: '✷',
       cost: 2,
       spec: {
         effect: { kind: 'grant_rule', rule: { kind: 'slide', dirs: DIAGONAL, range: 1 } },
@@ -86,7 +86,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'blue_shield_wall',
       name: 'Shield Wall',
-      glyph: '🛡',
+      glyph: '⛨',
       cost: 3,
       spec: { effect: { kind: 'shield_rank', turns: 1 }, slots: ['friendly_piece'] },
       blurb: 'Every friendly piece on that piece’s rank cannot be captured next turn.',
@@ -94,7 +94,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'blue_stoneform',
       name: 'Stoneform',
-      glyph: '🪨',
+      glyph: '⬢',
       cost: 2,
       spec: { effect: { kind: 'shield_friendly', turns: 1 }, slots: ['friendly_piece'] },
       blurb: 'Turn a piece to stone for a turn. It cannot be taken.',
@@ -102,7 +102,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'blue_bunker',
       name: 'Bunker',
-      glyph: '⛏',
+      glyph: '⊟',
       cost: 2,
       spec: { effect: { kind: 'submerge', turns: 2 }, slots: ['friendly_non_crown'] },
       blurb: 'The piece digs in: untouchable and immobile, and no longer blocks a line of sight.',
@@ -112,7 +112,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'green_restore',
       name: 'Restore',
-      glyph: '🌱',
+      glyph: '❈',
       cost: 2,
       spec: { effect: { kind: 'restore_grave' }, slots: ['empty_muster'] },
       blurb: 'Return your longest-dead piece to an empty muster square, free of charge.',
@@ -120,7 +120,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'green_roots',
       name: 'Roots',
-      glyph: '🪴',
+      glyph: '❉',
       cost: 2,
       spec: { effect: { kind: 'root_enemy', turns: 2 }, slots: ['enemy_piece'] },
       blurb: 'Lock an enemy piece down. It cannot move for two of its turns.',
@@ -128,7 +128,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'green_wildgrowth',
       name: 'Wildgrowth',
-      glyph: '🍃',
+      glyph: '❋',
       cost: 2,
       spec: { effect: { kind: 'grant_trait', trait: 'armored' }, slots: ['friendly_piece'] },
       blurb: 'Bark closes over a friendly piece. Chaff can no longer touch it.',
@@ -146,7 +146,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'yellow_detonate',
       name: 'Detonate',
-      glyph: '💥',
+      glyph: '❂',
       cost: 4,
       spec: { effect: { kind: 'detonate', radius: 'adjacent' }, slots: ['enemy_piece'] },
       blurb: 'Blow a hole in the board. The target and everything beside it goes — yours included.',
@@ -154,7 +154,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'yellow_chaos',
       name: 'Chaos Magic',
-      glyph: '🎲',
+      glyph: '◈',
       cost: 1,
       spec: { effect: { kind: 'recycle_hand' }, slots: [] },
       blurb: 'Cycle your whole hand to the bottom of the deck and draw fresh.',
@@ -164,7 +164,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'purple_grave_leap',
       name: 'Grave Leap',
-      glyph: '🦴',
+      glyph: '⇈',
       cost: 1,
       spec: {
         effect: { kind: 'grant_rule', rule: { kind: 'leap', offsets: KNIGHT_OFFSETS } },
@@ -175,7 +175,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'purple_raise',
       name: 'Raise the Levy',
-      glyph: '⚰',
+      glyph: '⊕',
       cost: 2,
       spec: {
         effect: { kind: 'summon', pieceId: pieceIdFor('purple', 'pawn') },
@@ -186,7 +186,7 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
     {
       id: 'purple_restless',
       name: 'Restless Dead',
-      glyph: '💀',
+      glyph: '◉',
       cost: 2,
       spec: { effect: { kind: 'restore_grave' }, slots: ['empty_muster'] },
       blurb: 'Your longest-dead piece gets back up on an empty muster square.',
