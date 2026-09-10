@@ -13,7 +13,7 @@ import {
   type Square,
 } from '@/engine';
 import type { BoardHit } from '../boardHit';
-import { ICON_SHIELD } from '../icons';
+import { ICON_SHIELD, PIECE_ART_ASPECT, pieceArtFor } from '../icons';
 import { diamondPoints, project } from '../isometric';
 import { colors } from '../theme';
 
@@ -203,30 +203,98 @@ function IsoPiece({
   if (!piece) return null;
   const def = getPiece(piece.pieceId);
   const faction = factionById(def.factionId);
+  const art = pieceArtFor(def.archetype, piece.owner);
   const now = state.clockMs;
   const submerged = piece.submergedUntilMs > now;
   const shielded = piece.shieldedUntilMs > now;
   const rooted = piece.rootedUntilMs > now;
   const resting = cooldownProgress(state, piece);
+  const ring = { borderColor: threatened ? colors.danger : SIDE_RING[piece.owner] };
 
+  // A standing figure reads best on a tilted board: a small footprint plate
+  // sits where the flat view's chip would, and the figure rises straight up
+  // from it — the same trick every isometric board game uses to keep pieces
+  // legible while the ground beneath them recedes.
+  if (art) {
+    const figureHeight = chip * 1.05;
+    const figureWidth = figureHeight * PIECE_ART_ASPECT;
+    const baseWidth = chip * 0.6;
+    const baseHeight = chip * 0.3;
+    const boxHeight = figureHeight + baseHeight * 0.6;
+
+    return (
+      <View
+        pointerEvents="none"
+        accessibilityLabel={squareName(square)}
+        style={{ position: 'absolute', left: x - chip / 2, top: y - boxHeight, width: chip, height: boxHeight }}
+      >
+        <View
+          style={[
+            styles.base,
+            ring,
+            {
+              width: baseWidth,
+              height: baseHeight,
+              borderRadius: baseHeight / 2,
+              backgroundColor: faction.paper,
+              left: (chip - baseWidth) / 2,
+              opacity: submerged ? 0.5 : 1,
+            },
+          ]}
+        />
+        <Image
+          source={art}
+          resizeMode="contain"
+          style={{
+            position: 'absolute',
+            left: (chip - figureWidth) / 2,
+            top: 0,
+            width: figureWidth,
+            height: figureHeight,
+            opacity: submerged ? 0.45 : 1,
+          }}
+        />
+        {resting > 0 ? (
+          <View
+            style={[
+              styles.pip,
+              { right: chip / 2 - baseWidth / 2 - 2, backgroundColor: colors.aether, opacity: 0.5 + resting * 0.5 },
+            ]}
+          />
+        ) : null}
+        {shielded ? (
+          <Image
+            source={ICON_SHIELD}
+            style={[styles.status, { width: chip * 0.3, height: chip * 0.3, left: (chip - chip * 0.3) / 2 }]}
+          />
+        ) : rooted || submerged ? (
+          <View style={[styles.status, { left: chip / 2 - chip * 0.12 }]}>
+            <Text style={{ fontSize: chip * 0.24 }} allowFontScaling={false}>
+              {submerged ? '⊟' : '❉'}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  // Fairy pieces have no painted figure, so they keep the original badge.
   return (
     <View
       pointerEvents="none"
       accessibilityLabel={squareName(square)}
       style={[
         styles.chip,
+        ring,
         {
           left: x - chip / 2,
-          // Lifted so the chip's base, not its centre, sits on the tile.
           top: y - chip * 0.86,
           width: chip,
           height: chip,
           borderRadius: chip * 0.26,
           backgroundColor: faction.paper,
-          borderColor: SIDE_RING[piece.owner],
           opacity: submerged ? 0.45 : 1,
         },
-        threatened ? styles.chipThreatened : null,
       ]}
     >
       <Text style={{ fontSize: chip * 0.52, color: faction.ink }} allowFontScaling={false}>
@@ -260,7 +328,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 4,
   },
-  chipThreatened: { borderColor: colors.danger },
-  status: { position: 'absolute', bottom: -6 },
-  pip: { position: 'absolute', top: -4, right: -2, width: 6, height: 6, borderRadius: 3 },
+  base: {
+    position: 'absolute',
+    bottom: 0,
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  status: { position: 'absolute', bottom: -2 },
+  pip: { position: 'absolute', top: 0, width: 6, height: 6, borderRadius: 3 },
 });

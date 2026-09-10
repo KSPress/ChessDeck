@@ -1,6 +1,6 @@
 import type { ImageSourcePropType } from 'react-native';
 
-import type { FactionId } from '@/engine';
+import type { Archetype, FactionId, Side } from '@/engine';
 
 /**
  * Hand-painted UI art, laid over the app's own glyph-and-colour chrome rather
@@ -70,4 +70,68 @@ const ELIXIR_CAP_BY_FACTION: Partial<Record<FactionId, ImageSourcePropType>> = {
 
 export function elixirCapFor(factionId: FactionId): ImageSourcePropType {
   return ELIXIR_CAP_BY_FACTION[factionId] ?? POWER_CAP_LEFT;
+}
+
+/**
+ * The small hanging pennant behind a player's Crown badge — a scrap of
+ * parchment scroll with a coloured flag hanging from it, one colour per
+ * faction. Humans fly the same shape desaturated to black-and-white
+ * parchment, since no gimmick means no colour.
+ */
+const PENNANT_BY_FACTION: Record<FactionId, ImageSourcePropType> = {
+  human: require('../../assets/ui/banners/small-human.png'),
+  red: require('../../assets/ui/banners/small-red.png'),
+  blue: require('../../assets/ui/banners/small-blue.png'),
+  green: require('../../assets/ui/banners/small-green.png'),
+  yellow: require('../../assets/ui/banners/small-yellow.png'),
+  purple: require('../../assets/ui/banners/small-purple.png'),
+};
+
+export function pennantFor(factionId: FactionId): ImageSourcePropType {
+  return PENNANT_BY_FACTION[factionId];
+}
+
+/**
+ * Painted chess-piece figures, one per classic archetype in each side's
+ * colour — light for gold, dark for shadow. Every faction's pawn, knight,
+ * bishop, rook and queen share the same base silhouette on the printed
+ * cards too, so standing figures in just two tones (rather than one per
+ * faction) reads as the board, not the deck. Crowns fly the king figure,
+ * since whatever a faction calls it, it is the piece that ends the match.
+ * Fairy pieces (Nightrider, Mao, Grasshopper…) have no classic silhouette,
+ * so they keep their own printed glyph.
+ */
+const PIECE_ART: Partial<Record<Archetype, Record<Side, ImageSourcePropType>>> = {
+  pawn: {
+    gold: require('../../assets/ui/pieces/pawn-light.png'),
+    shadow: require('../../assets/ui/pieces/pawn-dark.png'),
+  },
+  knight: {
+    gold: require('../../assets/ui/pieces/knight-light.png'),
+    shadow: require('../../assets/ui/pieces/knight-dark.png'),
+  },
+  bishop: {
+    gold: require('../../assets/ui/pieces/bishop-light.png'),
+    shadow: require('../../assets/ui/pieces/bishop-dark.png'),
+  },
+  rook: {
+    gold: require('../../assets/ui/pieces/rook-light.png'),
+    shadow: require('../../assets/ui/pieces/rook-dark.png'),
+  },
+  queen: {
+    gold: require('../../assets/ui/pieces/queen-light.png'),
+    shadow: require('../../assets/ui/pieces/queen-dark.png'),
+  },
+  leader: {
+    gold: require('../../assets/ui/pieces/king-light.png'),
+    shadow: require('../../assets/ui/pieces/king-dark.png'),
+  },
+};
+
+/** The native pixel size every piece figure was painted at — 1:2, standing tall. */
+export const PIECE_ART_ASPECT = 16 / 32;
+
+/** The figure for this archetype and side, or null for a fairy piece (glyph only). */
+export function pieceArtFor(archetype: Archetype, side: Side): ImageSourcePropType | null {
+  return PIECE_ART[archetype]?.[side] ?? null;
 }

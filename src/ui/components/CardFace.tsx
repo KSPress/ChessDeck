@@ -4,7 +4,7 @@ import { Animated, Image, Pressable, StyleSheet, Text, View } from 'react-native
 import { factionById } from '@/content';
 import { getCard, getPiece } from '@/engine';
 import type { Archetype, Card, CrownDef, MoveRule, PieceDef } from '@/engine';
-import { RETICLE } from '../icons';
+import { PIECE_ART_ASPECT, RETICLE, pieceArtFor } from '../icons';
 import { fonts, radius } from '../theme';
 import { MovementGrid } from './MovementGrid';
 
@@ -23,6 +23,8 @@ export interface CardFaceData {
   /** Movement rules for the printed grid; null for action cards. */
   rules: readonly MoveRule[] | null;
   isLeader: boolean;
+  /** Null for action cards, which have no standing figure to paint. */
+  archetype: Archetype | null;
 }
 
 /** The silhouette printed in the badge, one per chess archetype. */
@@ -46,6 +48,7 @@ export function faceOfCard(card: Card, piece?: PieceDef): CardFaceData {
     badge: card.kind === 'piece' ? (ARCHETYPE_BADGE[card.archetype] ?? '◆') : '✦',
     rules: card.kind === 'piece' ? (piece?.rules ?? null) : null,
     isLeader: false,
+    archetype: card.kind === 'piece' ? card.archetype : null,
   };
 }
 
@@ -65,6 +68,7 @@ export function faceOfCrown(crown: CrownDef): CardFaceData {
     badge: ARCHETYPE_BADGE.leader,
     rules: crown.rules,
     isLeader: true,
+    archetype: 'leader',
   };
 }
 
@@ -150,6 +154,11 @@ export function CardFace({
   const compact = size < 118;
   const inset = size * 0.05;
 
+  // A card always shows its own side's colours, whoever ends up playing it —
+  // there is no "shadow" version of a card in a binder or a hand.
+  const figureArt = face.archetype ? pieceArtFor(face.archetype, 'gold') : null;
+  const figureHeight = size * (compact ? 0.56 : 0.62);
+
   const body = (
     <Animated.View
       style={[
@@ -207,7 +216,15 @@ export function CardFace({
       ) : null}
 
       <View style={styles.centre} pointerEvents="none">
-        <Text style={{ fontSize: size * (compact ? 0.3 : 0.34), color: ink }}>{face.glyph}</Text>
+        {figureArt ? (
+          <Image
+            source={figureArt}
+            resizeMode="contain"
+            style={{ width: figureHeight * PIECE_ART_ASPECT, height: figureHeight }}
+          />
+        ) : (
+          <Text style={{ fontSize: size * (compact ? 0.3 : 0.34), color: ink }}>{face.glyph}</Text>
+        )}
       </View>
 
       <View style={[styles.footer, { paddingHorizontal: size * 0.1, paddingBottom: size * 0.075 }]}>

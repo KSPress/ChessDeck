@@ -27,7 +27,7 @@ import { ElixirBar } from '@/ui/components/ElixirBar';
 import { Hand } from '@/ui/components/Hand';
 import { PowerGauge } from '@/ui/components/PowerGauge';
 import { IsometricBoard, isoHeightFor } from '@/ui/components/IsometricBoard';
-import { ICON_BANNER, ICON_COIN, ICON_CURSOR, ICON_LOG, ICON_MEAT } from '@/ui/icons';
+import { ICON_BANNER, ICON_COIN, ICON_CURSOR, ICON_LOG, ICON_MEAT, pennantFor } from '@/ui/icons';
 import { colors, fonts, glow, radius, space, text } from '@/ui/theme';
 
 type ViewMode = 'flat' | 'iso';
@@ -339,8 +339,9 @@ function PlayerStrip({ state, side, label }: { state: MatchState; side: Side; la
 
   return (
     <View style={styles.strip}>
-      <View style={[styles.stripCrown, { backgroundColor: faction.paper }]}>
-        <Text style={{ fontSize: 17, color: faction.ink }}>{crown.glyph}</Text>
+      <View style={styles.stripCrown}>
+        <Image source={pennantFor(player.factionId)} resizeMode="stretch" style={StyleSheet.absoluteFill} />
+        <Text style={[styles.stripCrownGlyph, { color: faction.ink }]}>{crown.glyph}</Text>
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.stripName} numberOfLines={1}>
@@ -448,14 +449,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
   },
   stripCrown: {
-    width: 30,
-    height: 30,
-    borderRadius: radius.sm,
+    width: 34,
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
   },
+  stripCrownGlyph: { fontSize: 15, marginTop: 11 },
   stripName: { fontFamily: fonts.display, fontSize: 15, color: colors.text, letterSpacing: 0.3 },
   aetherTrack: { marginTop: 4, width: '80%' },
   stat: { alignItems: 'center', minWidth: 30 },
