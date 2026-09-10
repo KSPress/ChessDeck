@@ -45,6 +45,16 @@ interface Props {
 const SIDE_RING = { gold: colors.gold, shadow: colors.shadow } as const;
 
 /**
+ * React Native lays out with border-box sizing, so a container's own
+ * `borderWidth` eats into the space available to its children — the outer
+ * `size` passed in is the box the layout budgeted for, not the content area.
+ * Cells are sized against the space left after the frame, so the 6x6 grid
+ * fills the frame exactly instead of overflowing it by 2x this and getting
+ * clipped by `overflow: hidden`.
+ */
+const BOARD_FRAME_WIDTH = 5;
+
+/**
  * The 6x6 field of play, drawn with the human's home rank at the bottom.
  *
  * Pieces remember where they were last frame, so a move slides from the old
@@ -63,7 +73,7 @@ export function Board({
   onMeasure,
   humanSide,
 }: Props) {
-  const cell = size / BOARD_SIZE;
+  const cell = (size - BOARD_FRAME_WIDTH * 2) / BOARD_SIZE;
   const container = useRef<View>(null);
 
   // uid -> the square it occupied on the previous render.
@@ -151,9 +161,13 @@ function SquareCell({
   onPress,
 }: CellProps) {
   const piece = state.board[square] ?? null;
-  const dark = (fileOf(square) + rankOf(square)) % 2 === 0;
+  const file = fileOf(square);
   const rank = rankOf(square);
+  const dark = (file + rank) % 2 === 0;
   const isMuster = humanSide === 'gold' ? rank < 2 : rank >= BOARD_SIZE - 2;
+  // Coordinate ink sits opposite the square's own shade, the way it's inked on
+  // a real carved board so it stays legible on either colour.
+  const labelColor = dark ? theme.light : theme.dark;
 
   // Screen readers announce the square, its occupant and whether it is a legal
   // destination — which also makes the board driveable in UI tests.
@@ -202,6 +216,25 @@ function SquareCell({
           style={[styles.captureRing, { borderColor: theme.accent, borderRadius: cell * 0.5 }]}
           pointerEvents="none"
         />
+      ) : null}
+
+      {rank === 0 ? (
+        <Text
+          style={[styles.fileLabel, { color: labelColor, fontSize: cell * 0.16 }]}
+          pointerEvents="none"
+          allowFontScaling={false}
+        >
+          {String.fromCharCode(97 + file)}
+        </Text>
+      ) : null}
+      {file === 0 ? (
+        <Text
+          style={[styles.rankLabel, { color: labelColor, fontSize: cell * 0.16 }]}
+          pointerEvents="none"
+          allowFontScaling={false}
+        >
+          {rank + 1}
+        </Text>
       ) : null}
     </Pressable>
   );
@@ -314,7 +347,7 @@ function PieceChip({
 
 const styles = StyleSheet.create({
   board: {
-    borderWidth: 5,
+    borderWidth: BOARD_FRAME_WIDTH,
     borderRadius: radius.md,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -351,6 +384,20 @@ const styles = StyleSheet.create({
     bottom: 3,
     borderWidth: 2.5,
     opacity: 0.9,
+  },
+  fileLabel: {
+    position: 'absolute',
+    bottom: 2,
+    right: 4,
+    fontWeight: '700',
+    opacity: 0.65,
+  },
+  rankLabel: {
+    position: 'absolute',
+    top: 2,
+    left: 4,
+    fontWeight: '700',
+    opacity: 0.65,
   },
   chip: { alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
   chipThreatened: { borderColor: colors.danger },
