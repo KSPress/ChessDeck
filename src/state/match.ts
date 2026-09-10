@@ -45,6 +45,10 @@ interface MatchStore {
   begin: (player: Deck, opponent: Deck, difficulty: Difficulty, opponentName: string) => void;
   tapSquare: (square: Square) => void;
   tapCard: (handIndex: number) => void;
+  /** Picking a card up: arms it so the board can show where it may land. */
+  beginDrag: (handIndex: number) => boolean;
+  /** Releasing a card over `square`, or over nothing when it is null. */
+  dropCard: (handIndex: number, square: Square | null) => void;
   tapPower: () => void;
   cancel: () => void;
   endTurn: () => void;
@@ -269,6 +273,68 @@ export const useMatch = create<MatchStore>()((set, get) => {
       } else {
         set({ selected: null });
       }
+    },
+
+    beginDrag: (handIndex) => {
+      const state = playable();
+      if (!state) return false;
+
+      const cardId = state.players[HUMAN_SIDE].hand[handIndex];
+      if (!cardId) return false;
+      const card = getCard(cardId);
+
+      if (state.cardsLeft <= 0) {
+        set({ notice: 'You have already played a card this turn.' });
+        return false;
+      }
+      if (state.players[HUMAN_SIDE].aether < card.cost) {
+        set({ notice: `${card.name} costs ${card.cost} aether.` });
+        return false;
+      }
+
+      set({ pending: { kind: 'card', handIndex, targets: [] }, selected: null, notice: null });
+      return true;
+    },
+
+    dropCard: (handIndex, square) => {
+      const state = playable();
+      if (!state) return;
+
+      if (square === null) {
+        set({ pending: { kind: 'none' }, notice: null });
+        return;
+      }
+
+      const cardId = state.players[HUMAN_SIDE].hand[handIndex];
+      if (!cardId) return;
+      const card = getCard(cardId);
+
+      if (card.kind === 'piece') {
+        if (deploySquares(state, HUMAN_SIDE).includes(square)) {
+          commit({ type: 'deploy', handIndex, to: square });
+        } else {
+          set({ pending: { kind: 'none' }, notice: 'Drop pieces on an empty square in your muster zone.' });
+        }
+        return;
+      }
+
+      // An effect that needs no target simply resolves where it lands.
+      if (card.spec.slots.length === 0) {
+        commit({ type: 'cast', handIndex, targets: [] });
+        return;
+      }
+
+      // Otherwise the drop supplies the first target; any remaining ones are
+      // tapped, so a two-target card stays armed after the drag.
+      if (!targetOptions(state, HUMAN_SIDE, card.spec, 0).includes(square)) {
+        set({ pending: { kind: 'none' }, notice: 'That is not a legal target for that card.' });
+        return;
+      }
+      if (card.spec.slots.length === 1) {
+        commit({ type: 'cast', handIndex, targets: [square] });
+        return;
+      }
+      set({ pending: { kind: 'card', handIndex, targets: [square] }, notice: null });
     },
 
     cancel: () => set({ pending: { kind: 'none' }, selected: null, notice: null }),

@@ -105,10 +105,10 @@ export const CROWNS: CrownDef[] = [
     powerCost: 2,
     powerCooldown: 3,
     power: { effect: { kind: 'evolve_pawn' }, slots: ['friendly_pawn'] },
-    modifiers: { handSize: 6 },
+    modifiers: { handSize: 5 },
     code: '1R',
     blurb:
-      'Holds a wider hand than anyone and spends it on levies. Evolve promotes a pawn where it stands, no far rank required.',
+      'Holds a wider hand than anyone — five cards where everyone else holds four — and spends it on levies. Evolve promotes a pawn where it stands, no far rank required.',
   },
 ];
 

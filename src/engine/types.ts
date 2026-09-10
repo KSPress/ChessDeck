@@ -14,7 +14,7 @@ export const NUM_SQUARES = BOARD_SIZE * BOARD_SIZE;
 /** Deck construction limits. Both are tuning knobs for balance passes. */
 export const DECK_SIZE = 8;
 export const DEFAULT_MUSTER_LIMIT = 20;
-export const HAND_SIZE = 5;
+export const HAND_SIZE = 4;
 
 /** Aether is the per-match resource that pays for deploys, spells and powers. */
 export const AETHER_START = 3;

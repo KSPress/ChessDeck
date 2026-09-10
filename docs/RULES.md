@@ -52,8 +52,20 @@ merely unwise: eight Orc Warlords costs 48 against a budget of 20, and the copy
 limit stops it before that.
 
 Your deck **cycles**: a card you play returns to the back of the draw queue and
-you draw back up to [`HAND_SIZE`] = 5. You never run out, and you always know
-roughly what is coming.
+you draw back up to [`HAND_SIZE`] = 4. One new card arrives at the start of each
+turn, and the card waiting behind your hand is shown face-up, so you always know
+what is coming next. You never run out.
+
+## Playing a card
+
+Cards are **dragged** from your hand onto the board, not tapped. While a card is
+held the board lights the squares it may legally land on: your muster zone for a
+piece, the legal targets for an action card. A card with more than one target
+takes the first from where you drop it and the rest by tapping.
+
+Pressing a card without moving it — or hovering it with a mouse — opens its
+readout instead of playing it, which is how you find out what a card does
+without spending it.
 
 ## Pieces
 
@@ -111,7 +123,7 @@ printed on its card.
 | Dwarf Throne | Blue | One square left or right, and nothing else. Armored. | **Stoneform** — a friendly piece cannot be captured next turn | Muster limit 22 |
 | Elf Queen | Green | The full queen's lines | **Restore** — return your longest-dead piece to a muster square | — |
 | Gnome Engineer | Yellow | One square in any direction | **Lightning Strike** — destroy an enemy piece costing 3 or less | Starts on 5 aether |
-| Barrow King | Purple | One square in any direction, or a two-square shamble forward | **Evolve** — promote one of your pawns where it stands | Hand of 6 |
+| Barrow King | Purple | One square in any direction, or a two-square shamble forward | **Evolve** — promote one of your pawns where it stands | Hand of 5 |
 
 Using a power costs aether *and* your card action for the turn, then goes on
 cooldown.

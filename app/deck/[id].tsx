@@ -7,7 +7,9 @@ import { CARDS, CROWNS, factionById } from '@/content';
 import { canAddCard, getCrown, validateDeck, type Card, type Deck } from '@/engine';
 import { useDecks } from '@/state/decks';
 import { Button } from '@/ui/components/Button';
+import { CardDetail } from '@/ui/components/CardDetail';
 import { CardFace, faceOfCardId, faceOfCrown } from '@/ui/components/CardFace';
+import { readCard, readCrown } from '@/ui/describe';
 import { Panel } from '@/ui/components/Panel';
 import { colors, fonts, radius, space, text } from '@/ui/theme';
 
@@ -20,6 +22,7 @@ export default function DeckEditor() {
   const insets = useSafeAreaInsets();
   const { decks, save, remove, setActive, activeDeckId } = useDecks();
   const [notice, setNotice] = useState<string | null>(null);
+  const [inspecting, setInspecting] = useState<string | null>(null);
 
   const deck = decks.find((d) => d.id === id);
   if (!deck) {
@@ -71,7 +74,14 @@ export default function DeckEditor() {
 
   const slots = [...deck.cards, ...Array(Math.max(0, 8 - deck.cards.length)).fill(null)];
 
+  const readout = inspecting
+    ? inspecting.startsWith('crown:')
+      ? readCrown(getCrown(inspecting.slice('crown:'.length)))
+      : readCard(CARDS.find((c) => c.id === inspecting) as Card)
+    : null;
+
   return (
+    <View style={styles.root}>
     <ScrollView
       style={styles.root}
       contentContainerStyle={[
@@ -112,6 +122,9 @@ export default function DeckEditor() {
               selected={option.id === deck.crownId}
               dimmed={option.id !== deck.crownId}
               onPress={() => pickCrown(option.id)}
+              onLongPress={() => setInspecting(`crown:${option.id}`)}
+              onHoverIn={() => setInspecting(`crown:${option.id}`)}
+              onHoverOut={() => setInspecting(null)}
             />
           ))}
         </ScrollView>
@@ -146,6 +159,9 @@ export default function DeckEditor() {
                 face={faceOfCardId(cardId)}
                 size={SLOT_CARD_SIZE}
                 onPress={() => removeAt(index)}
+                onLongPress={() => setInspecting(cardId)}
+                onHoverIn={() => setInspecting(cardId)}
+                onHoverOut={() => setInspecting(null)}
               />
             ) : (
               <View
@@ -181,6 +197,9 @@ export default function DeckEditor() {
                 face={faceOfCardId(card.id)}
                 size={POOL_CARD_SIZE}
                 onPress={() => addCard(card)}
+                onLongPress={() => setInspecting(card.id)}
+                onHoverIn={() => setInspecting(card.id)}
+                onHoverOut={() => setInspecting(null)}
                 dimmed={!allowed.ok}
                 tag={copies > 0 ? `${copies}/${card.maxCopies}` : undefined}
               />
@@ -191,6 +210,13 @@ export default function DeckEditor() {
 
       <Button label="Delete deck" variant="danger" onPress={() => { remove(deck.id); router.back(); }} />
     </ScrollView>
+
+    {readout ? (
+      <View style={[styles.readout, { bottom: insets.bottom + space.lg }]} pointerEvents="none">
+        <CardDetail readout={readout} hint="Tap to add · hold to read" />
+      </View>
+    ) : null}
+    </View>
   );
 }
 
@@ -222,4 +248,5 @@ const styles = StyleSheet.create({
   },
   emptyMark: { fontSize: 22, color: colors.textDim },
   pool: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  readout: { position: 'absolute', left: space.lg, right: space.lg },
 });

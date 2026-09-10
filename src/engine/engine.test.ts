@@ -250,7 +250,7 @@ describe('board setup', () => {
     });
     expect(state.players.gold.hand).toHaveLength(HAND_SIZE);
     expect(state.players.gold.deck).toHaveLength(DECK_SIZE - HAND_SIZE);
-    expect(state.players.shadow.hand).toHaveLength(6);
+    expect(state.players.shadow.hand).toHaveLength(5);
   });
 
   it('starts gold with one move action and one card action', () => {

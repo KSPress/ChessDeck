@@ -31,11 +31,11 @@ export const COSMETICS: Cosmetic[] = [
   {
     id: DEFAULT_BOARD_ID,
     kind: 'board',
-    name: 'Obsidian Court',
-    blurb: 'The default field of play. Cold stone, warm gold.',
+    name: 'Tavern Oak',
+    blurb: 'The house board. Walnut and bone, scarred by a hundred games.',
     rarity: 'common',
     price: { currency: 'coins', amount: 0 },
-    theme: { light: '#3A3457', dark: '#1E1B2E', accent: '#F0B429', frame: '#0B0A14' },
+    theme: { light: '#C3B091', dark: '#4A3728', accent: '#B8412A', frame: '#1C1309' },
   },
   {
     id: 'board_verdant',

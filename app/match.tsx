@@ -1,25 +1,29 @@
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { boardThemeById, factionById } from '@/content';
-import { getCard, getCrown, opponentOf, type MatchState, type Side } from '@/engine';
+import {
+  BOARD_SIZE,
+  getCard,
+  getCrown,
+  opponentOf,
+  squareOf,
+  type MatchState,
+  type Side,
+  type Square,
+} from '@/engine';
 import { HUMAN_SIDE, highlightsFor, useMatch } from '@/state/match';
 import { useProfile } from '@/state/profile';
-import { Board } from '@/ui/components/Board';
+import { readCard, readCrown, type CardReadout } from '@/ui/describe';
+import { Board, type BoardRect } from '@/ui/components/Board';
 import { Button } from '@/ui/components/Button';
+import { Candlelight } from '@/ui/components/Candlelight';
+import { CardDetail } from '@/ui/components/CardDetail';
 import { CardFace, faceOfCardId } from '@/ui/components/CardFace';
-import { colors, fonts, radius, space, text } from '@/ui/theme';
-
-const HAND_CARD_SIZE = 76;
+import { Hand } from '@/ui/components/Hand';
+import { colors, fonts, glow, radius, space, text } from '@/ui/theme';
 
 export default function MatchScreen() {
   const router = useRouter();
@@ -29,30 +33,105 @@ export default function MatchScreen() {
   const { state, thinking, selected, pending, notice, opponentName } = store;
   const equippedBoard = useProfile((s) => s.equipped.board);
 
+  const [boardRect, setBoardRect] = useState<BoardRect | null>(null);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [inspectingIndex, setInspectingIndex] = useState<number | null>(null);
+  const [hoveredSquare, setHoveredSquare] = useState<Square | null>(null);
+  const dragPos = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+
   // Reached directly (deep link, reload) with no match in flight.
   useEffect(() => {
     if (!state) router.replace('/');
   }, [state, router]);
 
+  /** Page coordinates to a board square, or null when outside the board. */
+  const squareAt = useCallback(
+    (pageX: number, pageY: number): Square | null => {
+      if (!boardRect) return null;
+      const fx = (pageX - boardRect.x) / boardRect.size;
+      const fy = (pageY - boardRect.y) / boardRect.size;
+      if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1) return null;
+      const file = Math.floor(fx * BOARD_SIZE);
+      // Rank 0 is drawn along the bottom edge.
+      const rank = BOARD_SIZE - 1 - Math.floor(fy * BOARD_SIZE);
+      return squareOf(file, rank);
+    },
+    [boardRect],
+  );
+
+  const onGrab = useCallback(
+    (index: number) => {
+      if (store.beginDrag(index)) setDraggingIndex(index);
+    },
+    [store],
+  );
+
+  const onDragMove = useCallback(
+    (pageX: number, pageY: number) => {
+      dragPos.setValue({ x: pageX, y: pageY });
+      const square = squareAt(pageX, pageY);
+      // Only re-render when the finger crosses into a different square.
+      setHoveredSquare((current) => (current === square ? current : square));
+    },
+    [dragPos, squareAt],
+  );
+
+  const onDrop = useCallback(
+    (index: number, pageX: number, pageY: number) => {
+      store.dropCard(index, squareAt(pageX, pageY));
+      setDraggingIndex(null);
+      setHoveredSquare(null);
+    },
+    [store, squareAt],
+  );
+
+  const onCancelDrag = useCallback(() => {
+    store.cancel();
+    setDraggingIndex(null);
+    setHoveredSquare(null);
+  }, [store]);
+
   if (!state) return <View style={styles.root} />;
 
   const theme = boardThemeById(equippedBoard);
-  // Bounded by both axes: the strips, controls and hand need the rest of the screen.
-  const boardSize = Math.min(width - space.lg * 2, height * 0.46, 420);
-  const highlights = highlightsFor(store);
   const player = state.players[HUMAN_SIDE];
   const foe = state.players[opponentOf(HUMAN_SIDE)];
   const crown = getCrown(player.crownId);
 
   const yourTurn = state.active === HUMAN_SIDE && state.status === 'active' && !thinking;
   const chosen = pending.kind === 'none' ? [] : pending.targets;
+  const highlights = highlightsFor(store);
+
+  const chrome = insets.top + insets.bottom + 430;
+  const boardSize = Math.min(width - space.lg * 2, Math.max(220, height - chrome), 420);
+  const handCardSize = Math.min(78, (width - space.lg * 2 - 56) / 4 - space.sm);
 
   const powerReady =
     player.powerCooldown === 0 && player.aether >= crown.powerCost && state.cardsLeft > 0;
 
+  // The readout follows whatever the player is touching, and falls back to the
+  // Crown so the panel is never an empty hole in the layout.
+  const activeIndex = draggingIndex ?? inspectingIndex;
+  const activeCardId = activeIndex === null ? null : player.hand[activeIndex];
+  const readout: CardReadout | null = activeCardId
+    ? readCard(getCard(activeCardId))
+    : pending.kind === 'power'
+      ? readCrown(crown)
+      : null;
+
+  const hint = readout
+    ? draggingIndex !== null
+      ? readout.targetCount > 1
+        ? 'Drop on the first target, then tap the rest'
+        : 'Drop it on a lit square'
+      : 'Drag it onto the board to play it'
+    : undefined;
+
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={styles.root}>
+      <Candlelight />
+
+      <View style={[styles.header, { marginTop: insets.top }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button">
           <Text style={styles.back}>‹ Leave</Text>
         </Pressable>
@@ -64,26 +143,15 @@ export default function MatchScreen() {
 
       <PlayerStrip state={state} side={opponentOf(HUMAN_SIDE)} label={opponentName} />
 
-      <View style={styles.banner}>
-        <Text style={[styles.bannerText, { color: yourTurn ? colors.gold : colors.shadow }]}>
-          {state.status !== 'active'
-            ? 'Match over'
-            : thinking
-              ? `${opponentName} is thinking…`
-              : yourTurn
-                ? pending.kind !== 'none'
-                  ? 'Choose a target'
-                  : 'Your turn'
-                : 'Opponent’s turn'}
-        </Text>
-        {state.status === 'active' ? (
-          <Text style={styles.actionPips}>
-            {state.movesLeft > 0 ? '◆' : '◇'} move · {state.cardsLeft > 0 ? '◆' : '◇'} card
-          </Text>
-        ) : null}
-      </View>
-
-      <View style={styles.spacer} />
+      <TurnBanner
+        status={state.status}
+        thinking={thinking}
+        yourTurn={yourTurn}
+        targeting={pending.kind !== 'none' && draggingIndex === null}
+        opponentName={opponentName}
+        movesLeft={state.movesLeft}
+        cardsLeft={state.cardsLeft}
+      />
 
       <View style={styles.boardWrap}>
         <Board
@@ -92,18 +160,24 @@ export default function MatchScreen() {
           captures={highlights.captures}
           selected={selected}
           chosen={chosen}
+          hovered={hoveredSquare}
           theme={theme}
           size={boardSize}
           onTapSquare={store.tapSquare}
+          onMeasure={setBoardRect}
           humanSide={HUMAN_SIDE}
         />
       </View>
 
       <PlayerStrip state={state} side={HUMAN_SIDE} label="You" />
 
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-
-      <View style={styles.spacer} />
+      <View style={styles.readoutSlot}>
+        {readout ? (
+          <CardDetail readout={readout} hint={hint} />
+        ) : notice ? (
+          <Text style={styles.notice}>{notice}</Text>
+        ) : null}
+      </View>
 
       <View style={styles.controls}>
         <Pressable
@@ -123,7 +197,7 @@ export default function MatchScreen() {
           </Text>
         </Pressable>
 
-        {pending.kind !== 'none' ? (
+        {pending.kind !== 'none' && draggingIndex === null ? (
           <Button label="Cancel" variant="ghost" onPress={store.cancel} style={{ flex: 1 }} />
         ) : (
           <Button
@@ -136,29 +210,95 @@ export default function MatchScreen() {
         )}
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.hand, { paddingBottom: insets.bottom + space.sm }]}
-      >
-        {player.hand.map((cardId, index) => {
-          const card = getCard(cardId);
-          const affordable = player.aether >= card.cost && state.cardsLeft > 0;
-          return (
-            <CardFace
-              key={`${cardId}-${index}`}
-              face={faceOfCardId(cardId)}
-              size={HAND_CARD_SIZE}
-              onPress={() => store.tapCard(index)}
-              a11yLabel={`Hand ${index + 1}: ${card.name}, ${card.cost} aether`}
-              selected={pending.kind === 'card' && pending.handIndex === index}
-              dimmed={!affordable || !yourTurn}
-            />
-          );
-        })}
-      </ScrollView>
+      <View style={[styles.handSlot, { paddingBottom: insets.bottom + space.sm }]}>
+        <Hand
+          hand={player.hand}
+          nextCardId={player.deck[0] ?? null}
+          aether={player.aether}
+          canPlay={yourTurn && state.cardsLeft > 0}
+          cardSize={handCardSize}
+          draggingIndex={draggingIndex}
+          inspectingIndex={inspectingIndex}
+          onInspect={setInspectingIndex}
+          onGrab={onGrab}
+          onDragMove={onDragMove}
+          onDrop={onDrop}
+          onCancelDrag={onCancelDrag}
+        />
+      </View>
+
+      {draggingIndex !== null && activeCardId ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.ghost,
+            {
+              transform: [
+                { translateX: Animated.subtract(dragPos.x, handCardSize * 0.7) },
+                { translateY: Animated.subtract(dragPos.y, handCardSize * 1.5) },
+              ],
+            },
+          ]}
+        >
+          <CardFace face={faceOfCardId(activeCardId)} size={handCardSize * 1.4} lifted />
+        </Animated.View>
+      ) : null}
 
       {state.status !== 'active' ? <GameOver state={state} /> : null}
+    </View>
+  );
+}
+
+/** The "Your turn" call, which snaps in whenever the state behind it changes. */
+function TurnBanner({
+  status,
+  thinking,
+  yourTurn,
+  targeting,
+  opponentName,
+  movesLeft,
+  cardsLeft,
+}: {
+  status: MatchState['status'];
+  thinking: boolean;
+  yourTurn: boolean;
+  targeting: boolean;
+  opponentName: string;
+  movesLeft: number;
+  cardsLeft: number;
+}) {
+  const label =
+    status !== 'active'
+      ? 'Match over'
+      : thinking
+        ? `${opponentName} is thinking…`
+        : yourTurn
+          ? targeting
+            ? 'Choose a target'
+            : 'Your turn'
+          : 'Opponent’s turn';
+
+  const pop = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    pop.setValue(0.86);
+    Animated.spring(pop, { toValue: 1, useNativeDriver: true, speed: 18, bounciness: 12 }).start();
+  }, [label, pop]);
+
+  return (
+    <View style={styles.banner}>
+      <Animated.Text
+        style={[
+          styles.bannerText,
+          { color: yourTurn ? colors.gold : colors.shadow, transform: [{ scale: pop }] },
+        ]}
+      >
+        {label}
+      </Animated.Text>
+      {status === 'active' ? (
+        <Text style={styles.actionPips}>
+          {movesLeft > 0 ? '◆' : '◇'} move · {cardsLeft > 0 ? '◆' : '◇'} card
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -171,7 +311,7 @@ function PlayerStrip({ state, side, label }: { state: MatchState; side: Side; la
   const active = state.active === side && state.status === 'active';
 
   return (
-    <View style={[styles.strip, active ? { borderColor: colors.gold } : null]}>
+    <View style={[styles.strip, active ? styles.stripActive : null]}>
       <View style={[styles.stripCrown, { backgroundColor: faction.paper }]}>
         <Text style={{ fontSize: 17, color: faction.ink }}>{crown.glyph}</Text>
       </View>
@@ -193,7 +333,7 @@ function PlayerStrip({ state, side, label }: { state: MatchState; side: Side; la
 function Stat({ glyph, value, tint }: { glyph: string; value: number; tint: string }) {
   return (
     <View style={styles.stat}>
-      <Text style={{ fontSize: 11 }}>{glyph}</Text>
+      <Text style={{ fontSize: 11, color: tint }}>{glyph}</Text>
       <Text style={[styles.statValue, { color: tint }]}>{value}</Text>
     </View>
   );
@@ -205,6 +345,11 @@ function GameOver({ state }: { state: MatchState }) {
   const won = state.status === 'gold_wins';
   const drawn = state.status === 'draw';
 
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(enter, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 8 }).start();
+  }, [enter]);
+
   const leave = () => {
     clear();
     router.replace('/');
@@ -212,10 +357,16 @@ function GameOver({ state }: { state: MatchState }) {
 
   return (
     <View style={styles.overlay}>
-      <View style={styles.overlayCard}>
-        <Text style={styles.overlayTitle}>
-          {drawn ? 'A Draw' : won ? 'Victory' : 'Defeat'}
-        </Text>
+      <Animated.View
+        style={[
+          styles.overlayCard,
+          {
+            opacity: enter,
+            transform: [{ scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) }],
+          },
+        ]}
+      >
+        <Text style={styles.overlayTitle}>{drawn ? 'A Draw' : won ? 'Victory' : 'Defeat'}</Text>
         <Text style={[text.small, styles.overlayBody]}>
           {drawn
             ? 'The turn limit ran out with the boards level.'
@@ -224,12 +375,10 @@ function GameOver({ state }: { state: MatchState }) {
               : 'Your Crown has fallen. You still earn a consolation purse.'}
         </Text>
         {state.log.length > 0 ? (
-          <Text style={[text.tiny, styles.overlayLog]}>
-            {state.log[state.log.length - 1]?.text}
-          </Text>
+          <Text style={[text.tiny, styles.overlayLog]}>{state.log[state.log.length - 1]?.text}</Text>
         ) : null}
-        <Button label="Back to Play" onPress={leave} />
-      </View>
+        <Button label="Back to the table" onPress={leave} />
+      </Animated.View>
     </View>
   );
 }
@@ -243,7 +392,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
     paddingVertical: space.sm,
   },
-  back: { fontFamily: fonts.body, fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  back: { fontFamily: fonts.display, fontSize: 15, color: colors.textMuted, letterSpacing: 0.4 },
   turnCount: { fontFamily: fonts.body, fontSize: 12, color: colors.textDim },
   strip: {
     flexDirection: 'row',
@@ -257,52 +406,50 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  stripCrown: { width: 30, height: 30, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
-  stripName: { fontFamily: fonts.display, fontSize: 14, fontWeight: '700', color: colors.text },
+  stripActive: { borderColor: colors.gold, backgroundColor: colors.surfaceAlt },
+  stripCrown: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stripName: { fontFamily: fonts.display, fontSize: 15, color: colors.text, letterSpacing: 0.3 },
   stat: { alignItems: 'center', minWidth: 26 },
   statValue: { fontFamily: fonts.body, fontSize: 13, fontWeight: '800' },
   banner: { alignItems: 'center', paddingVertical: space.xs },
-  bannerText: { fontFamily: fonts.display, fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+  bannerText: { fontFamily: fonts.display, fontSize: 20, letterSpacing: 1 },
   actionPips: { fontFamily: fonts.body, fontSize: 11, color: colors.textDim, marginTop: 1 },
-  boardWrap: { alignItems: 'center', paddingVertical: space.xs },
-  spacer: { flex: 1, minHeight: space.sm },
-  notice: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: colors.gold,
-    textAlign: 'center',
-    paddingHorizontal: space.lg,
-    paddingTop: space.xs,
-  },
-  controls: {
-    flexDirection: 'row',
-    gap: space.sm,
-    paddingHorizontal: space.lg,
-    paddingTop: space.sm,
-  },
+  boardWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: space.xs },
+  readoutSlot: { minHeight: 96, justifyContent: 'center', paddingHorizontal: space.lg, paddingTop: space.sm },
+  notice: { fontFamily: fonts.body, fontSize: 12, color: colors.gold, textAlign: 'center' },
+  controls: { flexDirection: 'row', gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.sm },
   power: {
     flex: 1,
     borderRadius: radius.md,
     borderWidth: 1,
+    borderBottomWidth: 3,
     borderColor: colors.borderBright,
+    borderBottomColor: '#1A130C',
     backgroundColor: colors.surfaceAlt,
     paddingVertical: space.sm,
     paddingHorizontal: space.md,
     justifyContent: 'center',
-    minHeight: 46,
+    minHeight: 48,
   },
-  powerActive: { borderColor: colors.gold, backgroundColor: colors.goldDim },
-  powerDisabled: { opacity: 0.4 },
-  powerName: { fontFamily: fonts.display, fontSize: 14, fontWeight: '700', color: colors.text },
+  powerActive: { borderColor: colors.gold, backgroundColor: glow.brass },
+  powerDisabled: { opacity: 0.38 },
+  powerName: { fontFamily: fonts.display, fontSize: 15, color: colors.text, letterSpacing: 0.3 },
   powerMeta: { fontFamily: fonts.body, fontSize: 11, color: colors.textMuted },
-  hand: { gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.md },
+  handSlot: { paddingHorizontal: space.lg, paddingTop: space.md },
+  ghost: { position: 'absolute', top: 0, left: 0 },
   overlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(11,10,20,0.9)',
+    backgroundColor: 'rgba(10,8,5,0.9)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: space.xl,
@@ -318,7 +465,7 @@ const styles = StyleSheet.create({
     gap: space.md,
     alignItems: 'center',
   },
-  overlayTitle: { fontFamily: fonts.display, fontSize: 30, fontWeight: '700', color: colors.gold },
+  overlayTitle: { fontFamily: fonts.display, fontSize: 34, color: colors.gold, letterSpacing: 1 },
   overlayBody: { textAlign: 'center' },
   overlayLog: { textAlign: 'center', fontStyle: 'italic' },
 });

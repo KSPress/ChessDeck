@@ -40,6 +40,15 @@ Decks are **mono-faction**: your Crown sets your colour and all 8 cards must
 match it. `validateDeck(deck, { allowCrossFaction: true })` relaxes that, which
 is the hook for the planned Rainbow mode.
 
+## Look
+
+The app is dressed as a game you'd find on a table in a tavern: stained oak,
+brass fittings, candlelight and parchment. Titles and headings are set in
+**Minera** (`assets/fonts/Minera.otf`), loaded through `expo-font` in
+`app/_layout.tsx`; body copy stays on the system face for legibility at small
+sizes. The palette lives in `src/ui/theme.ts` and every screen draws from it,
+so retheming is a single-file change.
+
 ## Layout
 
 ```
@@ -70,6 +79,10 @@ call site instead of corrupting a match.
 **Playable now:** the full rules engine, deck building against real legality
 rules, PVE against a heuristic AI at three difficulties, the cosmetic store,
 and the Arena's Mirror Duel (your deck against itself).
+
+Cards are dragged from a four-card hand onto the board, with the next card shown
+face-up behind them. Holding or hovering any card — in hand, in a deck, or in
+the collection — opens a readout explaining exactly what it does.
 
 **Not built:** ranked matchmaking and guilds. Both need accounts and a server;
 those two tabs ship as the designed shells and say so on screen rather than

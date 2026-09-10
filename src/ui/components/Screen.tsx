@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, space, text } from '../theme';
+import { Candlelight } from './Candlelight';
 
 interface Props {
   title: string;
@@ -20,6 +21,7 @@ export function Screen({ title, subtitle, accessory, children, scroll = true }: 
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <Candlelight />
       <View style={styles.header}>
         <View style={styles.headerText}>
           <Text style={text.title}>{title}</Text>

@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { factionById } from '@/content';
 import { getCard, getPiece } from '@/engine';
@@ -71,6 +72,11 @@ interface Props {
   /** Card edge length; cards are square, as printed. */
   size: number;
   onPress?: () => void;
+  /** Held down — used to open the card readout on touch devices. */
+  onLongPress?: () => void;
+  /** Mouse hover, for the same readout on desktop. */
+  onHoverIn?: () => void;
+  onHoverOut?: () => void;
   selected?: boolean;
   /** Renders the card greyed out, e.g. when it cannot be afforded. */
   dimmed?: boolean;
@@ -78,6 +84,10 @@ interface Props {
   tag?: string;
   /** Overrides the screen-reader label, e.g. to mark a card as being in hand. */
   a11yLabel?: string;
+  /** Raised off the table — held, hovered, or mid-drag. */
+  lifted?: boolean;
+  /** Plays a deal-in animation on mount, for cards arriving in hand. */
+  animateIn?: boolean;
 }
 
 /**
@@ -89,9 +99,50 @@ interface Props {
  * The cost pip at bottom-left is the one addition the digital game needs —
  * the physical cards carry cost on the reference sheet instead.
  */
-export function CardFace({ face, size, onPress, selected, dimmed, tag, a11yLabel }: Props) {
+export function CardFace({
+  face,
+  size,
+  onPress,
+  onLongPress,
+  onHoverIn,
+  onHoverOut,
+  selected,
+  dimmed,
+  tag,
+  a11yLabel,
+  lifted,
+  animateIn,
+}: Props) {
   const faction = factionById(face.factionId);
   const { paper, ink } = faction;
+
+  // A card that has just been dealt slides up onto the table; a held one lifts
+  // off it. Both run on the native driver so a drag never stutters.
+  const dealt = useRef(new Animated.Value(animateIn ? 0 : 1)).current;
+  const raise = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!animateIn) return;
+    Animated.spring(dealt, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 9 }).start();
+  }, [animateIn, dealt]);
+
+  useEffect(() => {
+    Animated.spring(raise, {
+      toValue: lifted ? 1 : 0,
+      useNativeDriver: true,
+      speed: 30,
+      bounciness: lifted ? 10 : 0,
+    }).start();
+  }, [lifted, raise]);
+
+  const scale = Animated.multiply(
+    dealt.interpolate({ inputRange: [0, 1], outputRange: [0.72, 1] }),
+    raise.interpolate({ inputRange: [0, 1], outputRange: [1, 1.09] }),
+  );
+  const translateY = Animated.add(
+    dealt.interpolate({ inputRange: [0, 1], outputRange: [size * 0.35, 0] }),
+    raise.interpolate({ inputRange: [0, 1], outputRange: [0, -size * 0.1] }),
+  );
 
   // Below this the grid and badge stop being legible, so the card simplifies
   // down to cost, mark and name — the three things a hand needs at a glance.
@@ -99,7 +150,7 @@ export function CardFace({ face, size, onPress, selected, dimmed, tag, a11yLabel
   const inset = size * 0.05;
 
   const body = (
-    <View
+    <Animated.View
       style={[
         styles.card,
         {
@@ -107,8 +158,11 @@ export function CardFace({ face, size, onPress, selected, dimmed, tag, a11yLabel
           height: size,
           backgroundColor: paper,
           borderRadius: size * 0.07,
-          borderColor: selected ? '#FFFFFF' : 'rgba(0,0,0,0.35)',
+          borderColor: selected ? '#F3CE7C' : 'rgba(0,0,0,0.4)',
           borderWidth: selected ? 2 : 1,
+          opacity: dealt,
+          transform: [{ scale }, { translateY }],
+          shadowOpacity: lifted ? 0.55 : 0.3,
         },
         dimmed ? styles.dimmed : null,
       ]}
@@ -160,21 +214,22 @@ export function CardFace({ face, size, onPress, selected, dimmed, tag, a11yLabel
           <Text style={{ fontSize: size * 0.09, color: ink, marginBottom: -size * 0.02 }}>♕</Text>
         ) : null}
         <Text
-          numberOfLines={1}
-          adjustsFontSizeToFit
+          numberOfLines={2}
           style={{
             fontFamily: fonts.display,
-            fontSize: size * (compact ? 0.11 : 0.115),
-            fontWeight: '700',
+            fontSize: size * 0.1,
+            lineHeight: size * 0.108,
             color: ink,
             textAlign: 'center',
           }}
         >
           {face.name}
-          {!compact && face.code ? (
-            <Text style={{ fontSize: size * 0.07 }}>{`  ${face.code}`}</Text>
-          ) : null}
         </Text>
+        {!compact && face.code ? (
+          <Text style={{ fontFamily: fonts.body, fontSize: size * 0.062, color: ink, opacity: 0.75 }}>
+            {face.code}
+          </Text>
+        ) : null}
       </View>
 
       {face.cost !== null ? (
@@ -201,19 +256,35 @@ export function CardFace({ face, size, onPress, selected, dimmed, tag, a11yLabel
           <Text style={{ fontSize: size * 0.09, fontWeight: '800', color: paper }}>{tag}</Text>
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 
-  if (!onPress) return body;
+  if (!onPress && !onLongPress) return body;
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={a11yLabel ?? face.name}>
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      onPointerEnter={onHoverIn}
+      onPointerLeave={onHoverOut}
+      accessibilityRole="button"
+      accessibilityLabel={a11yLabel ?? face.name}
+    >
       {body}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { overflow: 'hidden', justifyContent: 'flex-end' },
+  card: {
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+    shadowColor: '#000',
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
   rule: { position: 'absolute', borderWidth: 1, opacity: 0.55 },
   badge: {
     position: 'absolute',

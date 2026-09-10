@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { factionById, type BoardTheme } from '@/content';
 import {
@@ -9,23 +10,34 @@ import {
   squareName,
   squareOf,
   type MatchState,
+  type PieceInstance,
   type Square,
 } from '@/engine';
 import { colors, radius } from '../theme';
 
+export interface BoardRect {
+  x: number;
+  y: number;
+  size: number;
+}
+
 interface Props {
   state: MatchState;
-  /** Squares the current selection can legally act on. */
+  /** Squares the current selection or dragged card can legally act on. */
   targets: readonly Square[];
   /** Subset of `targets` that hold an enemy piece. */
   captures: readonly Square[];
   selected: Square | null;
   /** Squares already chosen for a multi-target effect. */
   chosen?: readonly Square[];
+  /** Square the finger is currently over while dragging a card. */
+  hovered?: Square | null;
   theme: BoardTheme;
   /** Edge length of the whole board in pixels. */
   size: number;
   onTapSquare: (square: Square) => void;
+  /** Reports the board's position in window coordinates, for drop hit-testing. */
+  onMeasure?: (rect: BoardRect) => void;
   /** Whose muster zone to tint. */
   humanSide: 'gold' | 'shadow';
 }
@@ -33,8 +45,10 @@ interface Props {
 const SIDE_RING = { gold: colors.gold, shadow: colors.shadow } as const;
 
 /**
- * The 6x6 field of play. Drawn with the human's home rank at the bottom, so
- * rank 5 is rendered first and rank 0 last.
+ * The 6x6 field of play, drawn with the human's home rank at the bottom.
+ *
+ * Pieces remember where they were last frame, so a move slides from the old
+ * square instead of teleporting, and a freshly mustered piece drops in.
  */
 export function Board({
   state,
@@ -42,12 +56,29 @@ export function Board({
   captures,
   selected,
   chosen = [],
+  hovered,
   theme,
   size,
   onTapSquare,
+  onMeasure,
   humanSide,
 }: Props) {
   const cell = size / BOARD_SIZE;
+  const container = useRef<View>(null);
+
+  // uid -> the square it occupied on the previous render.
+  const previous = useRef(new Map<number, Square>());
+  const priorSquares = new Map(previous.current);
+
+  useEffect(() => {
+    const next = new Map<number, Square>();
+    for (const piece of state.board) if (piece) next.set(piece.uid, piece.square);
+    previous.current = next;
+  });
+
+  const measure = () => {
+    container.current?.measureInWindow((x, y, width) => onMeasure?.({ x, y, size: width }));
+  };
 
   const rows = [];
   for (let rank = BOARD_SIZE - 1; rank >= 0; rank -= 1) {
@@ -65,6 +96,8 @@ export function Board({
           isCapture={captures.includes(square)}
           isSelected={selected === square}
           isChosen={chosen.includes(square)}
+          isHovered={hovered === square}
+          priorSquare={priorSquares}
           humanSide={humanSide}
           onPress={() => onTapSquare(square)}
         />,
@@ -79,10 +112,9 @@ export function Board({
 
   return (
     <View
-      style={[
-        styles.board,
-        { width: size, height: size, borderColor: theme.frame, borderRadius: radius.md },
-      ]}
+      ref={container}
+      onLayout={measure}
+      style={[styles.board, { width: size, height: size, borderColor: theme.frame }]}
     >
       {rows}
     </View>
@@ -98,6 +130,8 @@ interface CellProps {
   isCapture: boolean;
   isSelected: boolean;
   isChosen: boolean;
+  isHovered: boolean;
+  priorSquare: Map<number, Square>;
   humanSide: 'gold' | 'shadow';
   onPress: () => void;
 }
@@ -111,11 +145,16 @@ function SquareCell({
   isCapture,
   isSelected,
   isChosen,
+  isHovered,
+  priorSquare,
   humanSide,
   onPress,
 }: CellProps) {
   const piece = state.board[square] ?? null;
   const dark = (fileOf(square) + rankOf(square)) % 2 === 0;
+  const rank = rankOf(square);
+  const isMuster = humanSide === 'gold' ? rank < 2 : rank >= BOARD_SIZE - 2;
+
   // Screen readers announce the square, its occupant and whether it is a legal
   // destination — which also makes the board driveable in UI tests.
   const label = [
@@ -125,9 +164,6 @@ function SquareCell({
   ]
     .filter(Boolean)
     .join(', ');
-  const rank = rankOf(square);
-  // Tint the two ranks the human may deploy onto.
-  const isMuster = humanSide === 'gold' ? rank < 2 : rank >= BOARD_SIZE - 2;
 
   return (
     <Pressable
@@ -135,17 +171,17 @@ function SquareCell({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: isSelected }}
-      style={[
-        styles.cell,
-        {
-          width: cell,
-          height: cell,
-          backgroundColor: dark ? theme.dark : theme.light,
-        },
-      ]}
+      style={[styles.cell, { width: cell, height: cell, backgroundColor: dark ? theme.dark : theme.light }]}
     >
       {isMuster ? (
         <View style={[styles.musterTint, { borderColor: theme.accent }]} pointerEvents="none" />
+      ) : null}
+
+      {isHovered ? (
+        <View
+          style={[styles.hoverFill, { backgroundColor: theme.accent, borderRadius: cell * 0.1 }]}
+          pointerEvents="none"
+        />
       ) : null}
 
       {isSelected || isChosen ? (
@@ -156,15 +192,9 @@ function SquareCell({
       ) : null}
 
       {piece ? (
-        <PieceChip piece={piece} cell={cell} threatened={isCapture} />
+        <PieceChip piece={piece} cell={cell} threatened={isCapture} priorSquare={priorSquare} />
       ) : isTarget ? (
-        <View
-          style={[
-            styles.moveDot,
-            { width: cell * 0.26, height: cell * 0.26, borderRadius: cell * 0.13, backgroundColor: theme.accent },
-          ]}
-          pointerEvents="none"
-        />
+        <TargetDot cell={cell} color={theme.accent} />
       ) : null}
 
       {isTarget && piece ? (
@@ -177,21 +207,81 @@ function SquareCell({
   );
 }
 
+/** A legal destination, breathing gently so it reads as live. */
+function TargetDot({ cell, color }: { cell: number; color: string }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        width: cell * 0.26,
+        height: cell * 0.26,
+        borderRadius: cell * 0.13,
+        backgroundColor: color,
+        opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.95] }),
+        transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.15] }) }],
+      }}
+    />
+  );
+}
+
 function PieceChip({
   piece,
   cell,
   threatened,
+  priorSquare,
 }: {
-  piece: NonNullable<MatchState['board'][number]>;
+  piece: PieceInstance;
   cell: number;
   threatened: boolean;
+  priorSquare: Map<number, Square>;
 }) {
   const def = getPiece(piece.pieceId);
   const faction = factionById(def.factionId);
-  const chip = cell * 0.78;
+  const chip = cell * 0.8;
+
+  // Slide in from wherever this piece stood last frame; a piece with no history
+  // has just been mustered, so it drops onto the board instead.
+  const from = priorSquare.get(piece.uid);
+  const enter = useRef(new Animated.Value(0)).current;
+  const offset = useRef({ x: 0, y: 0, fresh: from === undefined });
+
+  if (from !== undefined && from !== piece.square) {
+    offset.current = {
+      x: (fileOf(from) - fileOf(piece.square)) * cell,
+      // Rank 0 is drawn at the bottom, so a rank increase moves up the screen.
+      y: (rankOf(piece.square) - rankOf(from)) * cell,
+      fresh: false,
+    };
+    enter.setValue(0);
+  }
+
+  useEffect(() => {
+    Animated.spring(enter, { toValue: 1, useNativeDriver: true, speed: 16, bounciness: 6 }).start();
+  }, [enter, piece.square, piece.uid]);
+
+  const { x, y, fresh } = offset.current;
+  const transform = fresh
+    ? [{ scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) }]
+    : [
+        { translateX: enter.interpolate({ inputRange: [0, 1], outputRange: [x, 0] }) },
+        { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [y, 0] }) },
+      ];
 
   return (
-    <View
+    <Animated.View
       style={[
         styles.chip,
         {
@@ -202,6 +292,7 @@ function PieceChip({
           borderColor: SIDE_RING[piece.owner],
           // A bunkered piece is under the board: draw it sunken and faint.
           opacity: piece.submerged > 0 ? 0.45 : 1,
+          transform,
         },
         threatened ? styles.chipThreatened : null,
       ]}
@@ -213,16 +304,25 @@ function PieceChip({
       {piece.shielded > 0 || piece.rooted > 0 || piece.submerged > 0 ? (
         <View style={[styles.status, { bottom: -chip * 0.06 }]}>
           <Text style={{ fontSize: chip * 0.26 }} allowFontScaling={false}>
-            {piece.submerged > 0 ? '⛏' : piece.shielded > 0 ? '🛡' : '❈'}
+            {piece.submerged > 0 ? '⊟' : piece.shielded > 0 ? '⛨' : '❉'}
           </Text>
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  board: { borderWidth: 3, overflow: 'hidden' },
+  board: {
+    borderWidth: 5,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.6,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
+  },
   row: { flexDirection: 'row' },
   cell: { alignItems: 'center', justifyContent: 'center' },
   musterTint: {
@@ -234,15 +334,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     opacity: 0.18,
   },
-  selectRing: {
+  hoverFill: {
     position: 'absolute',
     top: 2,
     left: 2,
     right: 2,
     bottom: 2,
-    borderWidth: 2,
+    opacity: 0.3,
   },
-  moveDot: { opacity: 0.85 },
+  selectRing: { position: 'absolute', top: 2, left: 2, right: 2, bottom: 2, borderWidth: 2 },
   captureRing: {
     position: 'absolute',
     top: 3,
@@ -252,11 +352,7 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     opacity: 0.9,
   },
-  chip: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-  },
+  chip: { alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
   chipThreatened: { borderColor: colors.danger },
   status: { position: 'absolute' },
 });
