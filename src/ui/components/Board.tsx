@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 
 import { factionById, type BoardTheme } from '@/content';
 import {
   BOARD_SIZE,
+  cooldownProgress,
   fileOf,
   getPiece,
   rankOf,
@@ -13,13 +15,8 @@ import {
   type PieceInstance,
   type Square,
 } from '@/engine';
+import type { BoardHit } from '../boardHit';
 import { colors, radius } from '../theme';
-
-export interface BoardRect {
-  x: number;
-  y: number;
-  size: number;
-}
 
 interface Props {
   state: MatchState;
@@ -36,8 +33,8 @@ interface Props {
   /** Edge length of the whole board in pixels. */
   size: number;
   onTapSquare: (square: Square) => void;
-  /** Reports the board's position in window coordinates, for drop hit-testing. */
-  onMeasure?: (rect: BoardRect) => void;
+  /** Reports how to turn a page-space point into a square, for drop hit-testing. */
+  onMeasure?: (hit: BoardHit) => void;
   /** Whose muster zone to tint. */
   humanSide: 'gold' | 'shadow';
 }
@@ -87,7 +84,19 @@ export function Board({
   });
 
   const measure = () => {
-    container.current?.measureInWindow((x, y, width) => onMeasure?.({ x, y, size: width }));
+    container.current?.measureInWindow((x, y, width) => {
+      onMeasure?.({
+        squareAt: (pageX, pageY) => {
+          const fx = (pageX - x) / width;
+          const fy = (pageY - y) / width;
+          if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1) return null;
+          const file = Math.floor(fx * BOARD_SIZE);
+          // Rank 0 is drawn along the bottom edge.
+          const rank = BOARD_SIZE - 1 - Math.floor(fy * BOARD_SIZE);
+          return squareOf(file, rank);
+        },
+      });
+    });
   };
 
   const rows = [];
@@ -206,7 +215,7 @@ function SquareCell({
       ) : null}
 
       {piece ? (
-        <PieceChip piece={piece} cell={cell} threatened={isCapture} priorSquare={priorSquare} />
+        <PieceChip piece={piece} cell={cell} threatened={isCapture} priorSquare={priorSquare} state={state} />
       ) : isTarget ? (
         <TargetDot cell={cell} color={theme.accent} />
       ) : null}
@@ -275,15 +284,23 @@ function PieceChip({
   cell,
   threatened,
   priorSquare,
+  state,
 }: {
   piece: PieceInstance;
   cell: number;
   threatened: boolean;
   priorSquare: Map<number, Square>;
+  state: MatchState;
 }) {
   const def = getPiece(piece.pieceId);
   const faction = factionById(def.factionId);
   const chip = cell * 0.8;
+  const now = state.clockMs;
+  const submerged = piece.submergedUntilMs > now;
+  const shielded = piece.shieldedUntilMs > now;
+  const rooted = piece.rootedUntilMs > now;
+  // How much of its rest this piece still has left, 1 = just moved, 0 = ready.
+  const resting = cooldownProgress(state, piece);
 
   // Slide in from wherever this piece stood last frame; a piece with no history
   // has just been mustered, so it drops onto the board instead.
@@ -324,7 +341,7 @@ function PieceChip({
           backgroundColor: faction.paper,
           borderColor: SIDE_RING[piece.owner],
           // A bunkered piece is under the board: draw it sunken and faint.
-          opacity: piece.submerged > 0 ? 0.45 : 1,
+          opacity: submerged ? 0.45 : 1,
           transform,
         },
         threatened ? styles.chipThreatened : null,
@@ -334,14 +351,54 @@ function PieceChip({
         {def.glyph}
       </Text>
 
-      {piece.shielded > 0 || piece.rooted > 0 || piece.submerged > 0 ? (
+      {resting > 0 ? <CooldownRing size={chip} progress={resting} color={faction.ink} /> : null}
+
+      {shielded || rooted || submerged ? (
         <View style={[styles.status, { bottom: -chip * 0.06 }]}>
           <Text style={{ fontSize: chip * 0.26 }} allowFontScaling={false}>
-            {piece.submerged > 0 ? '⊟' : piece.shielded > 0 ? '⛨' : '❉'}
+            {submerged ? '⊟' : shielded ? '⛨' : '❉'}
           </Text>
         </View>
       ) : null}
     </Animated.View>
+  );
+}
+
+/**
+ * A thin ring around a resting piece that fills in as its cooldown runs out —
+ * the same "ability ready" read as Clash Royale's radial fills, so a glance
+ * at the board tells you which of your pieces are about to be free.
+ */
+function CooldownRing({ size, progress, color }: { size: number; progress: number; color: string }) {
+  const stroke = Math.max(1.5, size * 0.05);
+  const ringRadius = size / 2 - stroke / 2;
+  const circumference = 2 * Math.PI * ringRadius;
+
+  return (
+    <Svg
+      width={size}
+      height={size}
+      style={{ position: 'absolute' }}
+      pointerEvents="none"
+    >
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={ringRadius}
+        stroke={color}
+        strokeWidth={stroke}
+        fill="none"
+        opacity={0.85}
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * progress}
+        strokeLinecap="round"
+        // Starts the fill at 12 o'clock rather than 3 o'clock. An SVG
+        // transform string, not the rotation/origin props — those get
+        // converted to a `transform-origin` style on web, which React DOM
+        // then flags as an unknown/miscased DOM property.
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+    </Svg>
   );
 }
 

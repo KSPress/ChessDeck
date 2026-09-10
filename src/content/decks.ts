@@ -1,10 +1,27 @@
 import type { Deck } from '@/engine/types';
 
 /**
- * One preset deck per faction. Each is mono-faction, legal under its crown's
- * muster limit, and doubles as the tutorial for what that colour wants to do.
+ * One preset deck per faction. Each is mono-faction and doubles as the
+ * tutorial for what that colour wants to do. There is no deck-wide cost cap —
+ * a heavier deck already pays for itself in slower aether-funded deployment —
+ * so these lean into each faction's identity rather than hitting a budget.
  */
 export const STARTER_DECKS: Deck[] = [
+  {
+    id: 'starter_human',
+    name: 'Freehold Muster',
+    crownId: 'human_king',
+    cards: [
+      'human_pawn',
+      'human_pawn',
+      'human_pawn',
+      'human_knight',
+      'human_knight',
+      'human_rook',
+      'human_queen',
+      'human_barricade',
+    ],
+  },
   {
     id: 'starter_red',
     name: 'Bloodhorn Charge',
@@ -12,9 +29,9 @@ export const STARTER_DECKS: Deck[] = [
     cards: [
       'red_pawn',
       'red_pawn',
-      'red_signature',
-      'red_signature',
-      'red_knight',
+      'red_fairy0',
+      'red_fairy1',
+      'red_fairy1',
       'red_knight',
       'red_rook',
       'red_double_strike',
@@ -27,8 +44,8 @@ export const STARTER_DECKS: Deck[] = [
     cards: [
       'blue_pawn',
       'blue_pawn',
-      'blue_signature',
-      'blue_signature',
+      'blue_fairy1',
+      'blue_fairy1',
       'blue_rook',
       'blue_knight',
       'blue_shield_wall',
@@ -42,7 +59,7 @@ export const STARTER_DECKS: Deck[] = [
     cards: [
       'green_pawn',
       'green_pawn',
-      'green_knight',
+      'green_fairy0',
       'green_knight',
       'green_rook',
       'green_queen',
@@ -57,8 +74,8 @@ export const STARTER_DECKS: Deck[] = [
     cards: [
       'yellow_pawn',
       'yellow_pawn',
-      'yellow_signature',
-      'yellow_signature',
+      'yellow_fairy1',
+      'yellow_fairy1',
       'yellow_rook',
       'yellow_knight',
       'yellow_detonate',
@@ -73,9 +90,9 @@ export const STARTER_DECKS: Deck[] = [
       'purple_pawn',
       'purple_pawn',
       'purple_pawn',
-      'purple_signature',
-      'purple_signature',
+      'purple_fairy0',
       'purple_queen',
+      'purple_harvest',
       'purple_grave_leap',
       'purple_restless',
     ],

@@ -31,7 +31,7 @@ const ARCHETYPE_BADGE: Record<Archetype, string> = {
   bishop: '♝',
   rook: '♜',
   queen: '♛',
-  signature: '◆',
+  fairy: '◆',
   leader: '♚',
 };
 

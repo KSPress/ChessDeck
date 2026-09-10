@@ -1,6 +1,12 @@
 import { factionById } from '@/content';
 import { getPiece, type Card, type CrownDef, type Effect, type MoveRule, type Trait } from '@/engine';
 
+/** "4500" -> "4.5s", "3000" -> "3s". */
+function seconds(ms: number): string {
+  const s = ms / 1000;
+  return `${Number.isInteger(s) ? s : s.toFixed(1)}s`;
+}
+
 /** Plain-language description of a movement rule, for the card readout. */
 export function describeMovement(rules: readonly MoveRule[]): string {
   const parts = rules.map((rule) => {
@@ -9,17 +15,32 @@ export function describeMovement(rules: readonly MoveRule[]): string {
     }
     if (rule.kind === 'leap') {
       const knightish = rule.offsets.some((o) => Math.abs(o.df) + Math.abs(o.dr) === 3);
-      return knightish ? 'Leaps the knight’s move, over anything' : 'Leaps two squares in a straight line';
+      const camelish = rule.offsets.some((o) => Math.abs(o.df) + Math.abs(o.dr) === 4 && Math.abs(o.df) !== Math.abs(o.dr));
+      if (knightish) return 'Leaps the knight’s move, over anything';
+      if (camelish) return 'Leaps a long, lopsided line, over anything';
+      const spread = Math.max(...rule.offsets.map((o) => Math.max(Math.abs(o.df), Math.abs(o.dr))));
+      return spread >= 2 ? `Leaps ${spread} squares, over anything` : 'Leaps one square, over anything';
+    }
+    if (rule.kind === 'rider') {
+      return `Rides the knight’s move again and again, up to ${rule.range} hops`;
+    }
+    if (rule.kind === 'bentLeap') {
+      return 'Steps one square, then angles outward — blocked at the elbow';
+    }
+    if (rule.kind === 'hopper') {
+      return 'Rides to the first piece in a line, then hops just past it';
     }
     const dirs = rule.dirs.length;
     const shape =
-      dirs === 8 ? 'any direction' : dirs === 4 && rule.dirs.every((d) => d.df === 0 || d.dr === 0)
-        ? 'ranks and files'
-        : dirs === 4
-          ? 'diagonals'
-          : dirs === 2
-            ? 'left and right'
-            : `${dirs} directions`;
+      dirs === 8
+        ? 'any direction'
+        : dirs === 4 && rule.dirs.every((d) => d.df === 0 || d.dr === 0)
+          ? 'ranks and files'
+          : dirs === 4
+            ? 'diagonals'
+            : dirs === 2
+              ? 'left and right'
+              : `${dirs} directions`;
     const reach = rule.range >= 5 ? 'Unlimited' : `Up to ${rule.range}`;
     return `${reach} along ${shape}`;
   });
@@ -32,6 +53,9 @@ const TRAIT_TEXT: Record<Trait, string> = {
   armored: 'Armored — cannot be captured by cost-1 pieces',
   ethereal: 'Ethereal — slides straight through blockers',
   vengeful: 'Vengeful — whatever captures it dies too',
+  immutable: 'Immutable — can never be captured, moved, or moved onto',
+  explosive: 'Explosive — its killer, and anything beside it, goes with it',
+  reaper: 'Reaper — a chance to also convert an adjacent enemy pawn on capture',
 };
 
 export const describeTrait = (trait: Trait): string => TRAIT_TEXT[trait];
@@ -44,21 +68,21 @@ export function describeEffect(effect: Effect): string {
     case 'destroy_enemy':
       return `Destroy an enemy piece costing ${effect.maxCost} or less`;
     case 'shield_friendly':
-      return `A friendly piece cannot be captured for ${effect.turns} turn(s)`;
+      return `A friendly piece cannot be captured for ${seconds(effect.ms)}`;
     case 'shield_rank':
-      return `Every friendly piece on that rank is shielded for ${effect.turns} turn(s)`;
+      return `Every friendly piece on that rank is shielded for ${seconds(effect.ms)}`;
     case 'root_enemy':
-      return `An enemy piece cannot move for ${effect.turns} of its turns`;
+      return `An enemy piece cannot move for ${seconds(effect.ms)}`;
     case 'submerge':
-      return `Dig in for ${effect.turns} turns: untouchable, immobile, and no longer blocking`;
+      return `Dig in for ${seconds(effect.ms)}: untouchable, immobile, and no longer blocking`;
     case 'grant_trait':
       return `Grants ${effect.trait} for the rest of the match`;
     case 'grant_rule':
       return `Teaches a new way to move: ${describeMovement([effect.rule])}`;
-    case 'extra_move':
-      return `Take ${effect.count} extra move action(s) this turn`;
+    case 'refund_cooldown':
+      return 'That piece is ready to act again at once';
     case 'strike_on_capture':
-      return `Your next ${effect.count} capture(s) this turn each let that piece move again`;
+      return `Your next ${effect.count} capture(s) let that piece act again at once`;
     case 'detonate':
       return 'Destroys the target and everything around it — Crowns are spared';
     case 'evolve_pawn':
@@ -66,13 +90,15 @@ export function describeEffect(effect: Effect): string {
     case 'restore_grave':
       return 'Returns your longest-dead piece to an empty muster square';
     case 'teleport_friendly':
-      return 'Move a friendly piece to any empty square in your own half';
+      return 'Relocates a friendly piece to a square you choose';
+    case 'blink':
+      return 'Moves a piece anywhere along its own lines, straight through blockers';
+    case 'vanish':
+      return `Untargetable for ${seconds(effect.ms)} — but cannot capture while hidden`;
     case 'summon':
       return `Musters ${getPiece(effect.pieceId).name} for free`;
-    case 'crown_stride':
-      return 'Your Crown moves as a queen for the rest of this turn';
-    case 'crown_swap':
-      return 'Your Crown swaps places with a friendly piece';
+    case 'grant_harvest':
+      return 'Your next capture rises as a full undead version of what it takes';
     case 'recycle_hand':
       return 'Cycle your hand to the bottom of the deck and draw fresh';
     default:
@@ -100,7 +126,7 @@ const ARCHETYPE_LABEL: Record<string, string> = {
   bishop: 'Bishop',
   rook: 'Rook',
   queen: 'Queen',
-  signature: 'Signature',
+  fairy: 'Fairy',
   leader: 'Crown',
 };
 
@@ -140,7 +166,7 @@ export function readCrown(crown: CrownDef): CardReadout {
     lines: [
       describeMovement(crown.rules),
       ...crown.traits.filter((t) => t !== 'royal').map(describeTrait),
-      `${crown.powerName} (${crown.powerCost} aether, ${crown.powerCooldown}-turn cooldown): ${describeEffect(crown.power.effect)}`,
+      `${crown.powerName} (${crown.powerCost} aether, ${seconds(crown.powerCooldownMs)} cooldown): ${describeEffect(crown.power.effect)}`,
     ],
     blurb: crown.blurb,
     targetCount: crown.power.slots.length,

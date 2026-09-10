@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { factionById } from '@/content';
-import { getCrown, validateDeck, type Deck } from '@/engine';
+import { DECK_SIZE, getCrown, validateDeck, type Deck } from '@/engine';
 import { useDecks } from '@/state/decks';
 import { Button } from '@/ui/components/Button';
 import { CardFace, faceOfCrown } from '@/ui/components/CardFace';
@@ -23,8 +23,8 @@ export default function DecksScreen() {
     >
       <Panel>
         <Text style={text.small}>
-          Your Crown sets your faction, and every card must share it. The muster limit is what stops
-          a deck of nothing but Warlords — the Crown you pick decides how big that budget is.
+          Your Crown sets your faction, and every card must share it. There's no point cap — a
+          costlier deck simply deploys slower, so the trade-off is already built into the cards.
         </Text>
         <Button
           label="Build a new deck"
@@ -78,14 +78,14 @@ function DeckRow({
               style={[
                 styles.meterFill,
                 {
-                  width: `${Math.min(100, (check.totalCost / check.musterLimit) * 100)}%`,
-                  backgroundColor: check.totalCost > check.musterLimit ? colors.danger : faction.paper,
+                  width: `${Math.min(100, (deck.cards.length / DECK_SIZE) * 100)}%`,
+                  backgroundColor: check.valid ? faction.paper : colors.danger,
                 },
               ]}
             />
           </View>
           <Text style={text.tiny}>
-            {deck.cards.length}/8 cards · muster {check.totalCost}/{check.musterLimit}
+            {deck.cards.length}/{DECK_SIZE} cards · avg cost {check.averageCost.toFixed(1)}
           </Text>
 
           {check.valid ? (

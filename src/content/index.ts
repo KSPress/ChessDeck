@@ -7,15 +7,18 @@ import { registerCards, registerCrowns, registerFactions, registerPieces } from 
 import { CARDS } from './cards';
 import { CROWNS, CROWN_PIECES } from './crowns';
 import { FACTIONS } from './factions';
-import { PIECES } from './pieces';
+import { PIECES, RUNTIME_PIECES } from './pieces';
 
 registerFactions(FACTIONS);
-registerPieces([...PIECES, ...CROWN_PIECES]);
+// Runtime-only pieces (Harvest's zombie, the Barricade wall) are registered
+// so the engine can spawn them, but never appear in PIECE_CARDS — nobody
+// drafts a zombie into their deck.
+registerPieces([...PIECES, ...CROWN_PIECES, ...RUNTIME_PIECES]);
 registerCards(CARDS);
 registerCrowns(CROWNS);
 
 export { FACTIONS, factionById } from './factions';
-export { PIECES, piecesOfFaction, pieceIdFor } from './pieces';
+export { PIECES, RUNTIME_PIECES, piecesOfFaction, pieceIdFor } from './pieces';
 export { CROWNS, CROWN_PIECES, crownPieceId, crownById } from './crowns';
 export { CARDS, PIECE_CARDS, EFFECT_CARDS, cardsOfFaction, cardById } from './cards';
 export { STARTER_DECKS } from './decks';

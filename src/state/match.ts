@@ -4,13 +4,16 @@ import '@/content';
 import {
   applyAction,
   checkAction,
+  chooseAction,
   createMatch,
+  crownPlacementSquares,
   deploySquares,
   getCard,
   getCrown,
   movesFrom,
-  playAiTurn,
+  reactionIntervalMs,
   targetOptions,
+  advance as advanceMatch,
   type Action,
   type Deck,
   type Difficulty,
@@ -22,6 +25,12 @@ import { useProfile } from './profile';
 
 /** The human always plays gold; the AI or a remote opponent plays shadow. */
 export const HUMAN_SIDE = 'gold' as const;
+const AI_SIDE = 'shadow' as const;
+
+/** How often the battle clock ticks. Small enough to feel continuous. */
+const CLOCK_TICK_MS = 100;
+/** How long the AI takes to settle on where to stand its Crown, for feel. */
+const PLACEMENT_THINK_MS = 500;
 
 /** What the player is part-way through doing, if anything. */
 export type Pending =
@@ -34,7 +43,7 @@ interface MatchStore {
   mode: 'pve' | 'pvp';
   difficulty: Difficulty;
   opponentName: string;
-  /** True while the AI is taking its turn, so taps are ignored. */
+  /** Cosmetic only: true right after the AI acts, for a brief UI pulse. */
   thinking: boolean;
   selected: Square | null;
   pending: Pending;
@@ -51,15 +60,107 @@ interface MatchStore {
   dropCard: (handIndex: number, square: Square | null) => void;
   tapPower: () => void;
   cancel: () => void;
-  endTurn: () => void;
   resign: () => void;
   clear: () => void;
 }
 
-/** How long the AI appears to think, so its turn is readable rather than instant. */
-const AI_DELAY_MS = 600;
+// Real-time play has no turn order and no server, so the clock and the AI's
+// reactions are driven by timers living outside React's render cycle — a
+// setInterval for the battle clock, and a self-rescheduling setTimeout for
+// the AI, both cleared and restarted by begin()/resign()/clear() below. Zustand
+// stores are singletons for the app's lifetime, so module-level handles are
+// the simplest correct place to keep them; there is only ever one live match.
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+let aiTimer: ReturnType<typeof setTimeout> | null = null;
+let placementTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopTimers(): void {
+  if (clockTimer) clearInterval(clockTimer);
+  if (aiTimer) clearTimeout(aiTimer);
+  if (placementTimer) clearTimeout(placementTimer);
+  clockTimer = null;
+  aiTimer = null;
+  placementTimer = null;
+}
 
 export const useMatch = create<MatchStore>()((set, get) => {
+  function finish(state: MatchState): void {
+    stopTimers();
+    if (get().rewarded || get().mode !== 'pve') return;
+    useProfile.getState().recordPveResult(state.status === 'gold_wins');
+    set({ rewarded: true });
+  }
+
+  /** Starts the battle clock and the AI's reaction loop, once both Crowns are down. */
+  function startBattleLoops(): void {
+    if (clockTimer) return; // already running
+
+    clockTimer = setInterval(() => {
+      const live = get().state;
+      if (!live || live.status !== 'active' || live.phase !== 'battle') return;
+      const next = advanceMatch(live, CLOCK_TICK_MS);
+      set({ state: next });
+      if (next.status !== 'active') finish(next);
+    }, CLOCK_TICK_MS);
+
+    scheduleAiTick();
+  }
+
+  function scheduleAiTick(): void {
+    if (aiTimer) clearTimeout(aiTimer);
+    const difficulty = get().difficulty;
+    aiTimer = setTimeout(() => {
+      const live = get().state;
+      if (live && live.status === 'active' && live.phase === 'battle') {
+        const action = chooseAction(live, AI_SIDE, difficulty);
+        if (action) {
+          try {
+            const next = applyAction(live, action);
+            set({ state: next, thinking: true });
+            setTimeout(() => set({ thinking: false }), 220);
+            if (next.status !== 'active') {
+              finish(next);
+              return;
+            }
+          } catch {
+            // The board moved under it between choosing and applying — skip
+            // this tick rather than crash; the next one will see fresh state.
+          }
+        }
+      }
+      scheduleAiTick();
+    }, reactionIntervalMs(difficulty));
+  }
+
+  /** After any placeCrown action, starts the battle once both sides are down. */
+  function afterPlacement(next: MatchState): void {
+    if (next.phase === 'battle') startBattleLoops();
+  }
+
+  /** Commits an action, applying passives/log/etc. through the engine. */
+  function commit(action: Action): void {
+    const current = get().state;
+    if (!current) return;
+
+    const legality = checkAction(current, action);
+    if (!legality.ok) {
+      set({ notice: legality.reason ?? 'That is not a legal action.' });
+      return;
+    }
+
+    const next = applyAction(current, action);
+    set({ state: next, selected: null, pending: { kind: 'none' }, notice: null });
+    if (action.type === 'placeCrown') afterPlacement(next);
+    if (next.status !== 'active') finish(next);
+  }
+
+  /** The live state, or null when the match cannot be acted on right now. */
+  function playable(): MatchState | null {
+    const { state } = get();
+    if (!state || state.status !== 'active') return null;
+    return state;
+  }
+
   /**
    * Adds one target to a partially-filled effect and fires it once every slot
    * has a legal square.
@@ -87,57 +188,6 @@ export const useMatch = create<MatchStore>()((set, get) => {
     if (pending.kind !== 'none') set({ pending: { ...pending, targets } });
   }
 
-  function finish(state: MatchState): void {
-    if (get().rewarded || get().mode !== 'pve') return;
-    useProfile.getState().recordPveResult(state.status === 'gold_wins');
-    set({ rewarded: true, thinking: false });
-  }
-
-  function settle(state: MatchState): void {
-    if (state.status !== 'active') {
-      finish(state);
-      return;
-    }
-    if (state.active === HUMAN_SIDE) return;
-
-    set({ thinking: true });
-    setTimeout(() => {
-      const live = get().state;
-      // Guard against the match being cleared or reset while the AI "thought".
-      if (!live || live.active === HUMAN_SIDE || live.status !== 'active') {
-        set({ thinking: false });
-        return;
-      }
-      const after = playAiTurn(live, get().difficulty);
-      set({ state: after, thinking: false });
-      if (after.status !== 'active') finish(after);
-    }, AI_DELAY_MS);
-  }
-
-  /** Commits an action, then hands over to the AI if the turn has passed. */
-  function commit(action: Action): void {
-    const current = get().state;
-    if (!current) return;
-
-    const legality = checkAction(current, action);
-    if (!legality.ok) {
-      set({ notice: legality.reason ?? 'That is not a legal action.' });
-      return;
-    }
-
-    const next = applyAction(current, action);
-    set({ state: next, selected: null, pending: { kind: 'none' }, notice: null });
-    settle(next);
-  }
-
-  /** Whether the human may act at all right now. */
-  function playable(): MatchState | null {
-    const { state, thinking } = get();
-    if (!state || thinking) return null;
-    if (state.status !== 'active' || state.active !== HUMAN_SIDE) return null;
-    return state;
-  }
-
   return {
     state: null,
     mode: 'pve',
@@ -149,9 +199,11 @@ export const useMatch = create<MatchStore>()((set, get) => {
     rewarded: false,
     notice: null,
 
-    begin: (player, opponent, difficulty, opponentName) =>
+    begin: (player, opponent, difficulty, opponentName) => {
+      stopTimers();
+      const state = createMatch({ goldDeck: player, shadowDeck: opponent, seed: Date.now() });
       set({
-        state: createMatch({ goldDeck: player, shadowDeck: opponent, seed: Date.now() }),
+        state,
         mode: 'pve',
         difficulty,
         opponentName,
@@ -160,11 +212,24 @@ export const useMatch = create<MatchStore>()((set, get) => {
         pending: { kind: 'none' },
         rewarded: false,
         notice: null,
-      }),
+      });
+
+      // The AI settles on a Crown square almost at once — placement has no
+      // clock pressure, so there's no reason to make the player wait long.
+      placementTimer = setTimeout(() => {
+        const live = get().state;
+        if (!live || live.phase !== 'placement') return;
+        const action = chooseAction(live, AI_SIDE, difficulty);
+        if (!action) return;
+        const next = applyAction(live, action);
+        set({ state: next });
+        afterPlacement(next);
+      }, PLACEMENT_THINK_MS);
+    },
 
     tapCard: (handIndex) => {
       const state = playable();
-      if (!state) return;
+      if (!state || state.phase !== 'battle') return;
       const pending = get().pending;
 
       // Tapping the same card again puts it back down.
@@ -177,10 +242,6 @@ export const useMatch = create<MatchStore>()((set, get) => {
       if (!cardId) return;
       const card = getCard(cardId);
 
-      if (state.cardsLeft <= 0) {
-        set({ notice: 'You have already played a card this turn.' });
-        return;
-      }
       if (state.players[HUMAN_SIDE].aether < card.cost) {
         set({ notice: `${card.name} costs ${card.cost} aether.` });
         return;
@@ -188,7 +249,7 @@ export const useMatch = create<MatchStore>()((set, get) => {
 
       // Effects with no targets resolve the moment they are tapped.
       if (card.kind === 'effect' && card.spec.slots.length === 0) {
-        commit({ type: 'cast', handIndex, targets: [] });
+        commit({ type: 'cast', side: HUMAN_SIDE, handIndex, targets: [] });
         return;
       }
       set({ pending: { kind: 'card', handIndex, targets: [] }, selected: null, notice: null });
@@ -196,7 +257,7 @@ export const useMatch = create<MatchStore>()((set, get) => {
 
     tapPower: () => {
       const state = playable();
-      if (!state) return;
+      if (!state || state.phase !== 'battle') return;
       if (get().pending.kind === 'power') {
         set({ pending: { kind: 'none' } });
         return;
@@ -205,12 +266,9 @@ export const useMatch = create<MatchStore>()((set, get) => {
       const player = state.players[HUMAN_SIDE];
       const crown = getCrown(player.crownId);
 
-      if (state.cardsLeft <= 0) {
-        set({ notice: 'You have already used your card action this turn.' });
-        return;
-      }
-      if (player.powerCooldown > 0) {
-        set({ notice: `${crown.powerName} recharges in ${player.powerCooldown} turn(s).` });
+      if (player.powerReadyAtMs > state.clockMs) {
+        const seconds = Math.ceil((player.powerReadyAtMs - state.clockMs) / 1000);
+        set({ notice: `${crown.powerName} recharges for ${seconds}s.` });
         return;
       }
       if (player.aether < crown.powerCost) {
@@ -219,7 +277,7 @@ export const useMatch = create<MatchStore>()((set, get) => {
       }
 
       if (crown.power.slots.length === 0) {
-        commit({ type: 'power', targets: [] });
+        commit({ type: 'power', side: HUMAN_SIDE, targets: [] });
         return;
       }
       if (targetOptions(state, HUMAN_SIDE, crown.power, 0).length === 0) {
@@ -232,6 +290,18 @@ export const useMatch = create<MatchStore>()((set, get) => {
     tapSquare: (square) => {
       const state = playable();
       if (!state) return;
+
+      // Placement phase: a tap on a legal square stands the Crown there.
+      if (state.phase === 'placement') {
+        if (state.players[HUMAN_SIDE].crownPlaced) return;
+        if (crownPlacementSquares(state, HUMAN_SIDE).includes(square)) {
+          commit({ type: 'placeCrown', side: HUMAN_SIDE, square });
+        } else {
+          set({ notice: 'Stand your Crown in your muster zone, with room for its guard.' });
+        }
+        return;
+      }
+
       const { pending, selected } = get();
 
       if (pending.kind === 'card') {
@@ -241,14 +311,14 @@ export const useMatch = create<MatchStore>()((set, get) => {
 
         if (card.kind === 'piece') {
           if (deploySquares(state, HUMAN_SIDE).includes(square)) {
-            commit({ type: 'deploy', handIndex: pending.handIndex, to: square });
+            commit({ type: 'deploy', side: HUMAN_SIDE, handIndex: pending.handIndex, to: square });
           } else {
             set({ notice: 'Deploy onto an empty square in your muster zone.' });
           }
           return;
         }
         advanceTargets(card.spec, pending.targets, square, (targets) =>
-          commit({ type: 'cast', handIndex: pending.handIndex, targets }),
+          commit({ type: 'cast', side: HUMAN_SIDE, handIndex: pending.handIndex, targets }),
         );
         return;
       }
@@ -256,14 +326,14 @@ export const useMatch = create<MatchStore>()((set, get) => {
       if (pending.kind === 'power') {
         const crown = getCrown(state.players[HUMAN_SIDE].crownId);
         advanceTargets(crown.power, pending.targets, square, (targets) =>
-          commit({ type: 'power', targets }),
+          commit({ type: 'power', side: HUMAN_SIDE, targets }),
         );
         return;
       }
 
       // No card in hand — this is ordinary piece movement.
       if (selected !== null && movesFrom(state, selected).includes(square)) {
-        commit({ type: 'move', from: selected, to: square });
+        commit({ type: 'move', side: HUMAN_SIDE, from: selected, to: square });
         return;
       }
 
@@ -277,16 +347,12 @@ export const useMatch = create<MatchStore>()((set, get) => {
 
     beginDrag: (handIndex) => {
       const state = playable();
-      if (!state) return false;
+      if (!state || state.phase !== 'battle') return false;
 
       const cardId = state.players[HUMAN_SIDE].hand[handIndex];
       if (!cardId) return false;
       const card = getCard(cardId);
 
-      if (state.cardsLeft <= 0) {
-        set({ notice: 'You have already played a card this turn.' });
-        return false;
-      }
       if (state.players[HUMAN_SIDE].aether < card.cost) {
         set({ notice: `${card.name} costs ${card.cost} aether.` });
         return false;
@@ -298,7 +364,7 @@ export const useMatch = create<MatchStore>()((set, get) => {
 
     dropCard: (handIndex, square) => {
       const state = playable();
-      if (!state) return;
+      if (!state || state.phase !== 'battle') return;
 
       if (square === null) {
         set({ pending: { kind: 'none' }, notice: null });
@@ -311,7 +377,7 @@ export const useMatch = create<MatchStore>()((set, get) => {
 
       if (card.kind === 'piece') {
         if (deploySquares(state, HUMAN_SIDE).includes(square)) {
-          commit({ type: 'deploy', handIndex, to: square });
+          commit({ type: 'deploy', side: HUMAN_SIDE, handIndex, to: square });
         } else {
           set({ pending: { kind: 'none' }, notice: 'Drop pieces on an empty square in your muster zone.' });
         }
@@ -320,7 +386,7 @@ export const useMatch = create<MatchStore>()((set, get) => {
 
       // An effect that needs no target simply resolves where it lands.
       if (card.spec.slots.length === 0) {
-        commit({ type: 'cast', handIndex, targets: [] });
+        commit({ type: 'cast', side: HUMAN_SIDE, handIndex, targets: [] });
         return;
       }
 
@@ -331,25 +397,26 @@ export const useMatch = create<MatchStore>()((set, get) => {
         return;
       }
       if (card.spec.slots.length === 1) {
-        commit({ type: 'cast', handIndex, targets: [square] });
+        commit({ type: 'cast', side: HUMAN_SIDE, handIndex, targets: [square] });
         return;
       }
       set({ pending: { kind: 'card', handIndex, targets: [square] }, notice: null });
     },
 
     cancel: () => set({ pending: { kind: 'none' }, selected: null, notice: null }),
-    endTurn: () => commit({ type: 'endTurn' }),
 
     resign: () => {
       const state = get().state;
       if (!state || state.status !== 'active') return;
-      const conceded: MatchState = { ...state, status: 'shadow_wins' };
+      const conceded: MatchState = { ...state, status: 'shadow_wins', phase: 'over' };
       set({ state: conceded, pending: { kind: 'none' }, selected: null });
       finish(conceded);
     },
 
-    clear: () =>
-      set({ state: null, selected: null, pending: { kind: 'none' }, thinking: false, notice: null }),
+    clear: () => {
+      stopTimers();
+      set({ state: null, selected: null, pending: { kind: 'none' }, thinking: false, notice: null });
+    },
   };
 });
 
@@ -372,7 +439,12 @@ export function highlightsFor(store: {
   selected: Square | null;
 }): Highlights {
   const { state, pending, selected } = store;
-  if (!state || state.status !== 'active' || state.active !== HUMAN_SIDE) return NO_HIGHLIGHTS;
+  if (!state || state.status !== 'active') return NO_HIGHLIGHTS;
+
+  if (state.phase === 'placement') {
+    if (state.players[HUMAN_SIDE].crownPlaced) return NO_HIGHLIGHTS;
+    return { targets: crownPlacementSquares(state, HUMAN_SIDE), captures: [] };
+  }
 
   if (pending.kind === 'card') {
     const cardId = state.players[HUMAN_SIDE].hand[pending.handIndex];

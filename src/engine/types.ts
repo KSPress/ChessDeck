@@ -13,16 +13,25 @@ export const NUM_SQUARES = BOARD_SIZE * BOARD_SIZE;
 
 /** Deck construction limits. Both are tuning knobs for balance passes. */
 export const DECK_SIZE = 8;
-export const DEFAULT_MUSTER_LIMIT = 20;
 export const HAND_SIZE = 4;
 
-/** Aether is the per-match resource that pays for deploys, spells and powers. */
+/**
+ * Aether is the continuously regenerating resource that pays for deployments.
+ * It replaces per-turn income: matches are real-time, so the pool fills on a
+ * clock and the only thing gating a piece is its own cooldown.
+ */
 export const AETHER_START = 3;
-export const AETHER_INCOME = 2;
-export const AETHER_CAP = 12;
+export const AETHER_CAP = 10;
+/** Milliseconds to regenerate one point of aether. */
+export const AETHER_MS_PER_POINT = 1400;
 
-/** Safety valve so a stalled match still resolves. Counted in player turns. */
-export const TURN_LIMIT = 100;
+/** Hard cap on a match. Most end well inside this on a crown capture. */
+export const MATCH_LENGTH_MS = 300_000;
+/** Aether regenerates twice as fast past this mark, to force a conclusion. */
+export const DOUBLE_AETHER_AT_MS = 180_000;
+
+/** Every piece is unavailable for this long after being mustered. */
+export const DEPLOY_COOLDOWN_MULTIPLIER = 1.25;
 
 export type Side = 'gold' | 'shadow';
 export const SIDES: readonly Side[] = ['gold', 'shadow'] as const;
@@ -45,19 +54,21 @@ export interface Vec {
 /* Factions & archetypes                                               */
 /* ------------------------------------------------------------------ */
 
-export type FactionId = 'red' | 'blue' | 'green' | 'yellow' | 'purple';
-export const FACTION_IDS: readonly FactionId[] = ['red', 'blue', 'green', 'yellow', 'purple'] as const;
+export type FactionId = 'human' | 'red' | 'blue' | 'green' | 'yellow' | 'purple';
+export const FACTION_IDS: readonly FactionId[] = ['human', 'red', 'blue', 'green', 'yellow', 'purple'] as const;
 
 /**
  * Every faction fields its own version of each chess archetype — red's `pawn`
  * is an Orc Peon, blue's is a Dwarf Miner. The archetype drives the silhouette
  * badge printed on the card and the piece's baseline movement.
  */
-export type Archetype = 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'signature' | 'leader';
+export type Archetype = 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'fairy' | 'leader';
 
 /** What a faction does for free, all match long. */
 export type FactionPassive =
-  /** Red: after one of your pieces captures, it may move again (once per turn). */
+  /** Humans: no gimmick. The baseline, closest to classic chess. */
+  | { kind: 'none' }
+  /** Red: a piece that captures has its cooldown refunded and can strike on. */
   | { kind: 'bloodlust' }
   /** Blue: your pieces standing beside another friendly piece are armored. */
   | { kind: 'shieldwall' }
@@ -65,8 +76,11 @@ export type FactionPassive =
   | { kind: 'regrowth'; amount: number }
   /** Yellow: your captures detonate, destroying pieces diagonal to the target. */
   | { kind: 'explosive_capture' }
-  /** Purple: a captured pawn is replaced on your muster row (once per turn). */
-  | { kind: 'undying' };
+  /**
+   * Purple: an Undead piece's capture doesn't just remove the loser — it
+   * rises again as a zombie under Undead control, facing the way it used to.
+   */
+  | { kind: 'harvest' };
 
 export interface FactionDef {
   id: FactionId;
@@ -83,6 +97,12 @@ export interface FactionDef {
   passive: FactionPassive;
   passiveName: string;
   passiveBlurb: string;
+  /**
+   * True only for the Gnome Engineer: this faction's pieces muster adjacent
+   * to their own Crown instead of anywhere in the muster zone — automatons
+   * built around their tinkerer rather than an army along a back rank.
+   */
+  deployNearCrown?: boolean;
   blurb: string;
 }
 
@@ -100,7 +120,28 @@ export type MoveRule =
   /** Jumps directly to each offset, ignoring anything in between. */
   | { kind: 'leap'; offsets: Vec[] }
   /** Chess pawn behaviour: steps forward quietly, captures forward-diagonally. */
-  | { kind: 'pawn'; range: number };
+  | { kind: 'pawn'; range: number }
+  /**
+   * The Nightrider: repeats the same leap offset over and over in one
+   * direction, like a rook riding — except each step is a knight-shaped jump
+   * rather than a slide. Blocked only by what it would land ON, never by
+   * anything "between" two leaps (there is no between).
+   */
+  | { kind: 'rider'; offset: Vec; range: number }
+  /**
+   * The Mao: steps one square orthogonally, then one square outward on the
+   * diagonal — but unlike a knight, the orthogonal "leg" square must be empty
+   * or the move is blocked there, same as a real Chinese-chess horse. One rule
+   * carries the piece's whole set of (leg, offset) pairs.
+   */
+  | { kind: 'bentLeap'; leaps: { leg: Vec; offset: Vec }[] }
+  /**
+   * The Grasshopper: slides along a queen-line until it meets the first piece
+   * in that direction (its "hurdle"), then must land on the very next square
+   * beyond it — a quiet move if that square is empty, a capture if an enemy
+   * sits there, and no move at all in that direction otherwise.
+   */
+  | { kind: 'hopper'; dirs: Vec[]; range: number };
 
 export type Trait =
   /** Losing this piece loses the match. Only ever on a crown. */
@@ -112,9 +153,25 @@ export type Trait =
   /** Slides are not blocked by intervening pieces. */
   | 'ethereal'
   /** Whatever captures this piece is destroyed along with it. */
-  | 'vengeful';
+  | 'vengeful'
+  /** Can never be captured or destroyed by anything, ever. A permanent wall. */
+  | 'immutable'
+  /**
+   * Orcish final stand: when this piece is captured, the capture square (now
+   * held by its killer) detonates, taking the killer and anything adjacent.
+   */
+  | 'explosive'
+  /**
+   * The Undead Horseman: on a Harvest capture, also has a chance to convert
+   * one adjacent enemy pawn into a zombie of its own.
+   */
+  | 'reaper';
 
-/** A queen's movement, used by Regal Stride and as the `queen` archetype base. */
+/**
+ * The true queen's movement: unlimited range in all eight directions. Kept
+ * exclusive to the Elven Queen crown — every faction's `queen` archetype card
+ * uses a shorter-ranged rule instead, so this one stays worth being royalty.
+ */
 export const ALL_DIRECTIONS_RULE: MoveRule = {
   kind: 'slide',
   dirs: [
@@ -152,6 +209,11 @@ export interface PieceDef {
   promotesTo?: PieceId;
   /** Material weight used by the AI evaluator. */
   value: number;
+  /**
+   * How long this piece must rest after moving. This — not a turn clock — is
+   * what paces the match: heavy pieces hit hard but commit you for longer.
+   */
+  cooldownMs: number;
   blurb: string;
 }
 
@@ -167,44 +229,63 @@ export type TargetSlot =
   | 'enemy_piece'
   | 'empty_muster'
   | 'empty_own_half'
-  | 'empty_square';
+  | 'empty_square'
+  /** Empty, and not adjacent to any enemy piece — Burrow's landing rule. */
+  | 'empty_safe_square'
+  /** Only valid for Blink: any square the previously-chosen piece could reach if nothing blocked it. */
+  | 'blink_destination';
 
 export type Effect =
   | { kind: 'gain_aether'; amount: number }
   /** Destroys an enemy piece, but only one cheap enough to be smitten. */
   | { kind: 'destroy_enemy'; maxCost: number }
-  | { kind: 'shield_friendly'; turns: number }
-  | { kind: 'root_enemy'; turns: number }
+  | { kind: 'shield_friendly'; ms: number }
+  | { kind: 'root_enemy'; ms: number }
   | { kind: 'grant_trait'; trait: Trait }
-  | { kind: 'extra_move'; count: number }
+  /** Clears a friendly piece's cooldown so it can act again at once. */
+  | { kind: 'refund_cooldown' }
   /**
-   * Grants extra moves that are only paid out on a capture, as printed:
-   * "move a piece, capture, then move it again". Unconditional extra moves let
-   * a leaping Crown rush the enemy throne before the game has begun.
+   * Banks charges that refund the cooldown of whichever piece captures next —
+   * "capture, then strike again". In real time a cooldown refund *is* the
+   * extra move.
    */
   | { kind: 'strike_on_capture'; count: number }
   /** Moves a friendly piece to any empty square in the caster's own half. */
   | { kind: 'teleport_friendly' }
   /** Deploys a piece for free onto each chosen empty muster square. */
   | { kind: 'summon'; pieceId: PieceId }
-  /** The crown moves as a queen for the rest of this turn. */
-  | { kind: 'crown_stride' }
-  /** The crown swaps places with any friendly piece. */
-  | { kind: 'crown_swap' }
+  /**
+   * Elven Blink: relocates a friendly piece to any square along its own
+   * movement lines, ignoring blockers along the way — it just can't land on
+   * one. The destination is validated against that piece's own rules, not a
+   * fixed slot, so its legal squares are computed specially by the engine.
+   */
+  | { kind: 'blink' }
+  /**
+   * Elven Vanish: untargetable for a moment, at the cost of being unable to
+   * capture during that same window — evasion, not aggression.
+   */
+  | { kind: 'vanish'; ms: number }
+  /**
+   * Undead Harvest (the ability, not the standing passive): the next capture
+   * this piece's side lands yields a full undead version of whatever was
+   * taken, rather than the usual plain zombie.
+   */
+  | { kind: 'grant_harvest' }
   /** Replaces the rest of the hand by cycling it to the back of the deck. */
   | { kind: 'recycle_hand' }
-  /** Green: returns the oldest piece in your graveyard to a muster square. */
+  /** Green: returns the longest-dead piece in your graveyard to the board. */
   | { kind: 'restore_grave' }
   /** Purple: promotes one of your pawns where it stands. */
   | { kind: 'evolve_pawn' }
   /** Blue: the piece digs in — untouchable and immobile, and stops blocking. */
-  | { kind: 'submerge'; turns: number }
+  | { kind: 'submerge'; ms: number }
   /** Grants a piece an extra movement rule for the rest of the match. */
   | { kind: 'grant_rule'; rule: MoveRule }
   /** Destroys the targeted piece and everything around it. Crowns are spared. */
   | { kind: 'detonate'; radius: 'adjacent' | 'diagonal' }
   /** Shields every friendly piece sharing a rank with the target. */
-  | { kind: 'shield_rank'; turns: number };
+  | { kind: 'shield_rank'; ms: number };
 
 export interface EffectSpec {
   effect: Effect;
@@ -256,16 +337,19 @@ export interface CrownDef {
   traits: Trait[];
   /** Aether the crown's power costs on top of its cooldown. */
   powerCost: number;
-  /** Turns that must elapse between activations. */
-  powerCooldown: number;
   powerName: string;
   power: EffectSpec;
-  /** Per-crown adjustments applied at match start / deck validation. */
+  /** Per-crown adjustments applied at match start. */
   modifiers: {
     startingAether?: number;
-    musterLimit?: number;
     handSize?: number;
+    /** Multiplies this faction's aether regeneration rate. */
+    aetherRate?: number;
   };
+  /** How long the crown rests after moving. */
+  cooldownMs: number;
+  /** Seconds between activations of the crown power. */
+  powerCooldownMs: number;
   code: string;
   blurb: string;
 }
@@ -287,20 +371,28 @@ export interface PieceInstance {
   crownId?: CrownId;
   hasMoved: boolean;
   /**
-   * True for the turn a piece is mustered. Without this a player could deploy a
-   * long-reaching piece and strike with it the same turn, which on a 6x6 board
-   * means sniping the enemy Crown out of nowhere.
+   * Clock time at which this piece may next move. Set when it is mustered and
+   * again after every move, this is the game's core pacing mechanism.
    */
-  sick: boolean;
-  /** Turns remaining during which this piece cannot move. */
-  rooted: number;
-  /** Turns remaining during which this piece cannot be captured. */
-  shielded: number;
+  readyAtMs: number;
+  /** Clock time until which this piece cannot move at all. */
+  rootedUntilMs: number;
+  /** Clock time until which this piece cannot be captured. */
+  shieldedUntilMs: number;
+  /** Clock time until which this piece may move, but never capture. */
+  noCaptureUntilMs: number;
   /**
-   * Turns remaining dug in: untouchable and immobile, and — unlike a shield —
+   * True for an Undead zombie: it plays for its new owner but keeps the
+   * *original* owner's forward direction — "facing the opposite direction",
+   * as printed. Movement code treats a reversed piece as if it belonged to
+   * the opposing side for orientation purposes only.
+   */
+  reversed: boolean;
+  /**
+   * Dug in until this time: untouchable and immobile, and — unlike a shield —
    * it stops blocking line of sight, so pieces slide straight over it.
    */
-  submerged: number;
+  submergedUntilMs: number;
 }
 
 export interface PlayerState {
@@ -314,20 +406,26 @@ export interface PlayerState {
   handSize: number;
   /** Pieces of yours that have died on the board, oldest first. */
   graveyard: PieceId[];
-  /** Turns remaining before the crown power is available again. */
-  powerCooldown: number;
-  /** While >= the current turn, this player's crown moves as a queen. */
-  strideUntilTurn: number;
-  /** Once-per-turn faction passives that have already fired this turn. */
-  passiveUsedOnTurn: number;
-  /** Extra moves owed on this turn's next captures. Cleared each turn. */
+  /** Clock time at which the crown power becomes available again. */
+  powerReadyAtMs: number;
+  /** Multiplier on this player's aether regeneration. */
+  aetherRate: number;
+  /** Cooldown refunds owed to whichever piece captures next. */
   pendingStrikes: number;
+  /** Undead: the next capture yields a full undead version of the casualty
+   *  instead of a plain zombie. Spent by the first capture that follows. */
+  harvestCharges: number;
+  /** False until this player has chosen where their crown stands. */
+  crownPlaced: boolean;
 }
 
 export type MatchStatus = 'active' | 'gold_wins' | 'shadow_wins' | 'draw';
 
+/** Placement happens before the clock starts; the battle runs in real time. */
+export type MatchPhase = 'placement' | 'battle' | 'over';
+
 export interface LogEntry {
-  turn: number;
+  atMs: number;
   side: Side;
   text: string;
 }
@@ -336,18 +434,9 @@ export interface MatchState {
   /** Length NUM_SQUARES; null means empty. */
   board: (PieceInstance | null)[];
   players: Record<Side, PlayerState>;
-  /** 1-based count of player turns taken so far, including the current one. */
-  turn: number;
-  active: Side;
-  /** Each turn allows one move action and one card action. */
-  movesLeft: number;
-  cardsLeft: number;
-  /**
-   * Set when a capture has earned another swing: "move a piece, capture, then
-   * move *it* again". Only this piece may take the extra move, which is what
-   * keeps Bloodlust a combat engine rather than free tempo.
-   */
-  mustMoveUid: number | null;
+  /** Milliseconds of battle elapsed. Zero until both crowns are placed. */
+  clockMs: number;
+  phase: MatchPhase;
   status: MatchStatus;
   seed: number;
   log: LogEntry[];
@@ -358,12 +447,16 @@ export interface MatchState {
 /* Actions                                                             */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Every action names its side: with no turn order, both players may act at any
+ * moment their aether and cooldowns allow.
+ */
 export type Action =
-  | { type: 'move'; from: Square; to: Square }
-  | { type: 'deploy'; handIndex: number; to: Square }
-  | { type: 'cast'; handIndex: number; targets: Square[] }
-  | { type: 'power'; targets: Square[] }
-  | { type: 'endTurn' };
+  | { type: 'placeCrown'; side: Side; square: Square }
+  | { type: 'move'; side: Side; from: Square; to: Square }
+  | { type: 'deploy'; side: Side; handIndex: number; to: Square }
+  | { type: 'cast'; side: Side; handIndex: number; targets: Square[] }
+  | { type: 'power'; side: Side; targets: Square[] };
 
 export interface Deck {
   id: string;

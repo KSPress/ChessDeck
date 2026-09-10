@@ -1,11 +1,31 @@
 import { ALL_DIRECTIONS, KNIGHT_OFFSETS } from '@/engine/board';
-import type { CrownDef, PieceDef } from '@/engine/types';
+import { ALL_DIRECTIONS_RULE, type CrownDef, type PieceDef } from '@/engine/types';
 
 /**
  * The faction leaders. Each is the royal piece — lose it and you lose the match
- * — and each moves exactly as printed on its card.
+ * — and each moves exactly as printed on its card. `cooldownMs` is the crown's
+ * own resting time after moving; `powerCooldownMs` gates its power separately.
  */
 export const CROWNS: CrownDef[] = [
+  {
+    id: 'human_king',
+    name: 'Human King',
+    factionId: 'human',
+    title: 'No Gimmick, None Needed',
+    glyph: '♚',
+    // Printed movement: one square in any direction, the plain king's step.
+    rules: [{ kind: 'slide', dirs: ALL_DIRECTIONS, range: 1 }],
+    traits: ['royal'],
+    cooldownMs: 1800,
+    powerName: 'Rally',
+    powerCost: 2,
+    powerCooldownMs: 9_000,
+    power: { effect: { kind: 'shield_friendly', ms: 4_000 }, slots: ['friendly_piece'] },
+    modifiers: {},
+    code: '1R',
+    blurb:
+      'Closest to classic chess of any crown in the game — the baseline every other faction is measured against.',
+  },
   {
     id: 'orc_chieftain',
     name: 'Orc Chieftain',
@@ -15,14 +35,15 @@ export const CROWNS: CrownDef[] = [
     // Printed movement: the knight's crooked charge.
     rules: [{ kind: 'leap', offsets: KNIGHT_OFFSETS }],
     traits: ['royal'],
+    cooldownMs: 2200,
     powerName: 'Warcry',
     powerCost: 2,
-    powerCooldown: 3,
+    powerCooldownMs: 9_000,
     power: { effect: { kind: 'strike_on_capture', count: 2 }, slots: [] },
     modifiers: {},
     code: '1R',
     blurb:
-      'A crown that hunts. Leaping the knight’s path puts him in reach of things a king should not be near — which is the point. Warcry pays out an extra move on each of the next two captures, so it rewards a line of blood rather than a straight run at the throne.',
+      'A crown that hunts. Leaping the knight’s path puts him in reach of things a king should not be near — which is the point. Warcry pays out a cooldown refund on each of the next two captures, so it rewards a line of blood rather than a straight run at the throne.',
   },
   {
     id: 'dwarf_throne',
@@ -44,14 +65,15 @@ export const CROWNS: CrownDef[] = [
     // Plated as well as immobile: he can barely step aside, so chaff must not
     // be able to topple him.
     traits: ['royal', 'armored'],
+    cooldownMs: 2000,
     powerName: 'Stoneform',
     powerCost: 2,
-    powerCooldown: 3,
-    power: { effect: { kind: 'shield_friendly', turns: 1 }, slots: ['friendly_piece'] },
-    modifiers: { musterLimit: 22 },
+    powerCooldownMs: 9_000,
+    power: { effect: { kind: 'shield_friendly', ms: 4_000 }, slots: ['friendly_piece'] },
+    modifiers: { aetherRate: 1.25 },
     code: '1R',
     blurb:
-      'He shuffles along his back rank and no further. In exchange the hold musters heavier than anyone else can afford.',
+      'He shuffles along his back rank and no further. In exchange, the hold’s aether flows a quarter faster than anyone else’s — the economic edge his own immobility buys.',
   },
   {
     id: 'elf_queen',
@@ -59,17 +81,19 @@ export const CROWNS: CrownDef[] = [
     factionId: 'green',
     title: 'Lady of the Everroot',
     glyph: '♛',
-    // Printed movement: the full queen, unlimited in all eight directions.
-    rules: [{ kind: 'slide', dirs: ALL_DIRECTIONS, range: 5 }],
+    // Printed movement: the full queen, unlimited in all eight directions —
+    // the one place in the game this movement is still legal.
+    rules: [ALL_DIRECTIONS_RULE],
     traits: ['royal'],
+    cooldownMs: 3600,
     powerName: 'Restore',
     powerCost: 2,
-    powerCooldown: 3,
+    powerCooldownMs: 9_000,
     power: { effect: { kind: 'restore_grave' }, slots: ['empty_muster'] },
-    modifiers: { musterLimit: 20 },
+    modifiers: { aetherRate: 0.85 },
     code: '1R',
     blurb:
-      'The most mobile crown in the game — and the most exposed, since losing her loses the match. She fights, and she brings the fallen back to do it again.',
+      'The only true queen’s movement left standing anywhere in the game — and the most exposed crown for it, since losing her loses the match outright. Everroot’s aether runs a little slower to pay for her reach.',
   },
   {
     id: 'gnome_engineer',
@@ -80,14 +104,15 @@ export const CROWNS: CrownDef[] = [
     // Printed movement: one square in any direction.
     rules: [{ kind: 'slide', dirs: ALL_DIRECTIONS, range: 1 }],
     traits: ['royal'],
+    cooldownMs: 1800,
     powerName: 'Lightning Strike',
     powerCost: 3,
-    powerCooldown: 4,
+    powerCooldownMs: 12_000,
     power: { effect: { kind: 'destroy_enemy', maxCost: 3 }, slots: ['enemy_piece'] },
-    modifiers: { startingAether: 5 },
+    modifiers: { startingAether: 6 },
     code: '2R',
     blurb:
-      'The pieces are his clockwork; the actions are his spells. Opens fast on extra aether and removes whatever is inconvenient.',
+      'The pieces are his clockwork; the actions are his spells. Opens fast on extra aether and removes whatever is inconvenient. Every automaton but the Engineer himself has to be built standing next to him.',
   },
   {
     id: 'barrow_king',
@@ -101,9 +126,10 @@ export const CROWNS: CrownDef[] = [
       { kind: 'leap', offsets: [{ df: 0, dr: 2 }] },
     ],
     traits: ['royal'],
+    cooldownMs: 2000,
     powerName: 'Evolve',
     powerCost: 2,
-    powerCooldown: 3,
+    powerCooldownMs: 9_000,
     power: { effect: { kind: 'evolve_pawn' }, slots: ['friendly_pawn'] },
     modifiers: { handSize: 5 },
     code: '1R',
@@ -130,6 +156,7 @@ export const CROWN_PIECES: PieceDef[] = CROWNS.map((crown) => ({
   traits: crown.traits,
   // Weighted far above any other piece: losing it ends the match outright.
   value: 1000,
+  cooldownMs: crown.cooldownMs,
   blurb: crown.blurb,
 }));
 

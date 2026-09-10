@@ -33,6 +33,47 @@ export const KNIGHT_OFFSETS: Vec[] = [
 /** Every square exactly two steps away in a straight line, jumped over. */
 export const LEAP_TWO_OFFSETS: Vec[] = ALL_DIRECTIONS.map((v) => ({ df: v.df * 2, dr: v.dr * 2 }));
 
+/* ------------------------------------------------------------------ */
+/* Fairy-chess offsets, named after the pieces that use them.          */
+/* ------------------------------------------------------------------ */
+
+/** Dabbaba: a 2-square orthogonal jump, over whatever sits between. */
+export const DABBABA_OFFSETS: Vec[] = ORTHOGONAL.map((v) => ({ df: v.df * 2, dr: v.dr * 2 }));
+
+/** Wazir: a single orthogonal step, leaping rather than sliding. */
+export const WAZIR_OFFSETS: Vec[] = ORTHOGONAL;
+
+/** Ferz: a single diagonal step, leaping rather than sliding. */
+export const FERZ_OFFSETS: Vec[] = DIAGONAL;
+
+/** Alfil: a 2-square diagonal jump, over whatever sits between. */
+export const ALFIL_OFFSETS: Vec[] = DIAGONAL.map((v) => ({ df: v.df * 2, dr: v.dr * 2 }));
+
+/** Camel: the knight's asymmetric cousin, a (1,3) leap instead of (1,2). */
+export const CAMEL_OFFSETS: Vec[] = [
+  { df: 1, dr: 3 }, { df: 3, dr: 1 }, { df: 1, dr: -3 }, { df: 3, dr: -1 },
+  { df: -1, dr: 3 }, { df: -3, dr: 1 }, { df: -1, dr: -3 }, { df: -3, dr: -1 },
+];
+
+/**
+ * Mao: one orthogonal step (the "leg", which blocks the move if occupied),
+ * then one diagonal step outward from there. Each of the 8 knight-shaped
+ * destinations has exactly one leg square that can block it.
+ */
+export const MAO_LEAPS: { leg: Vec; offset: Vec }[] = [
+  { leg: { df: 0, dr: 1 }, offset: { df: 1, dr: 1 } },
+  { leg: { df: 0, dr: 1 }, offset: { df: -1, dr: 1 } },
+  { leg: { df: 0, dr: -1 }, offset: { df: 1, dr: -1 } },
+  { leg: { df: 0, dr: -1 }, offset: { df: -1, dr: -1 } },
+  { leg: { df: 1, dr: 0 }, offset: { df: 1, dr: 1 } },
+  { leg: { df: 1, dr: 0 }, offset: { df: 1, dr: -1 } },
+  { leg: { df: -1, dr: 0 }, offset: { df: -1, dr: 1 } },
+  { leg: { df: -1, dr: 0 }, offset: { df: -1, dr: -1 } },
+];
+
+/** Nightrider directions: the 8 knight vectors, each ridden repeatedly. */
+export const NIGHTRIDER_DIRECTIONS: Vec[] = KNIGHT_OFFSETS;
+
 export function squareOf(file: number, rank: number): Square {
   return rank * BOARD_SIZE + file;
 }

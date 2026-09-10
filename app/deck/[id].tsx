@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CARDS, CROWNS, factionById } from '@/content';
-import { canAddCard, getCrown, validateDeck, type Card, type Deck } from '@/engine';
+import { DECK_SIZE, canAddCard, getCrown, validateDeck, type Card, type Deck } from '@/engine';
 import { useDecks } from '@/state/decks';
 import { Button } from '@/ui/components/Button';
 import { CardDetail } from '@/ui/components/CardDetail';
@@ -112,7 +112,7 @@ export default function DeckEditor() {
         accessibilityLabel="Deck name"
       />
 
-      <Panel title="Crown" hint={`${faction.theme} · muster ${check.musterLimit}`}>
+      <Panel title="Crown" hint={faction.theme}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.crownRow}>
           {CROWNS.map((option) => (
             <CardFace
@@ -138,14 +138,14 @@ export default function DeckEditor() {
         </Text>
       </Panel>
 
-      <Panel title="Deck" hint={`${deck.cards.length}/8 · muster ${check.totalCost}/${check.musterLimit}`}>
+      <Panel title="Deck" hint={`${deck.cards.length}/${DECK_SIZE} · avg cost ${check.averageCost.toFixed(1)}`}>
         <View style={styles.meterTrack}>
           <View
             style={[
               styles.meterFill,
               {
-                width: `${Math.min(100, (check.totalCost / check.musterLimit) * 100)}%`,
-                backgroundColor: check.totalCost > check.musterLimit ? colors.danger : faction.paper,
+                width: `${Math.min(100, (deck.cards.length / DECK_SIZE) * 100)}%`,
+                backgroundColor: check.valid ? faction.paper : colors.danger,
               },
             ]}
           />

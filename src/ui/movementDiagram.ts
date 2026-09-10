@@ -50,6 +50,18 @@ export function movementDiagram(rules: readonly MoveRule[]): MovementDiagram {
       }
     } else if (rule.kind === 'leap') {
       for (const offset of rule.offsets) mark(offset.df, offset.dr);
+    } else if (rule.kind === 'rider') {
+      // A rider is a repeated leap: the first hop always fits the grid, and
+      // anything past that gets the same "onward" arrow a slide would.
+      mark(rule.offset.df, rule.offset.dr);
+      if (rule.range > 1) addArrow(rule.offset);
+    } else if (rule.kind === 'bentLeap') {
+      // The diagram shows only where it can land, not the leg that can block it.
+      for (const { offset } of rule.leaps) mark(offset.df, offset.dr);
+    } else if (rule.kind === 'hopper') {
+      // The real landing square depends on where the hurdle sits, but two
+      // squares out is the shortest possible hop and reads clearly on a card.
+      for (const dir of rule.dirs) mark(dir.df * 2, dir.dr * 2);
     } else {
       for (let step = 1; step <= Math.min(rule.range, DIAGRAM_RADIUS); step += 1) mark(0, step);
       // Pawns strike on the forward diagonals, which the diagram shows too.

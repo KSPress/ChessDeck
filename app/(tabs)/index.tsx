@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { STARTER_DECKS, factionById } from '@/content';
-import { getCrown, validateDeck, type Deck, type Difficulty } from '@/engine';
+import { DECK_SIZE, getCrown, validateDeck, type Deck, type Difficulty } from '@/engine';
 import { useBattleDeck } from '@/state/decks';
 import { useMatch } from '@/state/match';
 import { useProfile } from '@/state/profile';
@@ -53,7 +53,7 @@ export default function PlayScreen() {
 
   return (
     <Screen title="The Table" subtitle="Sit down against one of the five houses" accessory={<CurrencyBar />}>
-      <Panel title="Your Crown" hint={`${check.totalCost} / ${check.musterLimit} muster`}>
+      <Panel title="Your Crown" hint={`${deck.cards.length} / ${DECK_SIZE} cards · avg cost ${check.averageCost.toFixed(1)}`}>
         <View style={styles.crownRow}>
           <CardFace face={faceOfCrown(crown)} size={118} />
           <View style={styles.crownInfo}>

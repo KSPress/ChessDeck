@@ -49,10 +49,22 @@ interface ActionEntry {
 }
 
 /**
- * Faction action cards. These compete with pieces for the same eight deck slots
- * and the same muster budget, so each one has to beat simply playing a body.
+ * Faction ability cards — up to four per faction, exactly as the design spec
+ * frames the pool: 1 crown (never a deck slot) + the classic pieces + two
+ * fairy pieces + up to four abilities. Humans field exactly one (Barricade)
+ * and no fairy pieces at all — that trade is their whole identity.
  */
 const ACTIONS: Record<FactionId, ActionEntry[]> = {
+  human: [
+    {
+      id: 'human_barricade',
+      name: 'Barricade',
+      glyph: '⛔',
+      cost: 3,
+      spec: { effect: { kind: 'summon', pieceId: 'human_barricade_wall' }, slots: ['empty_square'] },
+      blurb: 'Raise an immovable wall on any empty square. It cannot be captured, or moved onto, ever.',
+    },
+  ],
   red: [
     {
       id: 'red_double_strike',
@@ -88,27 +100,54 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
       name: 'Shield Wall',
       glyph: '⛨',
       cost: 3,
-      spec: { effect: { kind: 'shield_rank', turns: 1 }, slots: ['friendly_piece'] },
-      blurb: 'Every friendly piece on that piece’s rank cannot be captured next turn.',
+      spec: { effect: { kind: 'shield_rank', ms: 4_000 }, slots: ['friendly_piece'] },
+      blurb: 'Every friendly piece on that piece’s rank cannot be captured for a few seconds.',
     },
     {
       id: 'blue_stoneform',
-      name: 'Stoneform',
+      name: 'Stoneskin',
       glyph: '⬢',
       cost: 2,
-      spec: { effect: { kind: 'shield_friendly', turns: 1 }, slots: ['friendly_piece'] },
-      blurb: 'Turn a piece to stone for a turn. It cannot be taken.',
+      spec: { effect: { kind: 'shield_friendly', ms: 4_000 }, slots: ['friendly_piece'] },
+      blurb: 'Turn a piece briefly invulnerable. It cannot be taken while the stone holds.',
     },
     {
       id: 'blue_bunker',
       name: 'Bunker',
       glyph: '⊟',
       cost: 2,
-      spec: { effect: { kind: 'submerge', turns: 2 }, slots: ['friendly_non_crown'] },
+      spec: { effect: { kind: 'submerge', ms: 6_000 }, slots: ['friendly_non_crown'] },
       blurb: 'The piece digs in: untouchable and immobile, and no longer blocks a line of sight.',
+    },
+    {
+      id: 'blue_burrow',
+      name: 'Burrow',
+      glyph: '⊘',
+      cost: 3,
+      spec: {
+        effect: { kind: 'teleport_friendly' },
+        slots: ['friendly_non_crown', 'empty_safe_square'],
+      },
+      blurb: 'Tunnel a piece anywhere on the map — so long as it doesn’t surface beside an enemy.',
     },
   ],
   green: [
+    {
+      id: 'green_blink',
+      name: 'Blink',
+      glyph: '✦',
+      cost: 2,
+      spec: { effect: { kind: 'blink' }, slots: ['friendly_non_crown', 'blink_destination'] },
+      blurb: 'Move a piece anywhere along its own lines, straight through whatever is blocking it.',
+    },
+    {
+      id: 'green_vanish',
+      name: 'Vanish',
+      glyph: '✧',
+      cost: 2,
+      spec: { effect: { kind: 'vanish', ms: 3_000 }, slots: ['friendly_non_crown'] },
+      blurb: 'Slip out of reach for a moment — untargetable, but it cannot strike while it hides.',
+    },
     {
       id: 'green_restore',
       name: 'Restore',
@@ -122,16 +161,8 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
       name: 'Roots',
       glyph: '❉',
       cost: 2,
-      spec: { effect: { kind: 'root_enemy', turns: 2 }, slots: ['enemy_piece'] },
-      blurb: 'Lock an enemy piece down. It cannot move for two of its turns.',
-    },
-    {
-      id: 'green_wildgrowth',
-      name: 'Wildgrowth',
-      glyph: '❋',
-      cost: 2,
-      spec: { effect: { kind: 'grant_trait', trait: 'armored' }, slots: ['friendly_piece'] },
-      blurb: 'Bark closes over a friendly piece. Chaff can no longer touch it.',
+      spec: { effect: { kind: 'root_enemy', ms: 5_000 }, slots: ['enemy_piece'] },
+      blurb: 'Lock an enemy piece down. It cannot move for several seconds.',
     },
   ],
   yellow: [
@@ -159,8 +190,24 @@ const ACTIONS: Record<FactionId, ActionEntry[]> = {
       spec: { effect: { kind: 'recycle_hand' }, slots: [] },
       blurb: 'Cycle your whole hand to the bottom of the deck and draw fresh.',
     },
+    {
+      id: 'yellow_overcharge',
+      name: 'Overcharge',
+      glyph: '☲',
+      cost: 1,
+      spec: { effect: { kind: 'gain_aether', amount: 3 }, slots: [] },
+      blurb: 'A spellcaster’s trick that pays for itself: more spells than anyone, and the aether to cast them.',
+    },
   ],
   purple: [
+    {
+      id: 'purple_harvest',
+      name: 'Harvest',
+      glyph: '⚚',
+      cost: 2,
+      spec: { effect: { kind: 'grant_harvest' }, slots: [] },
+      blurb: 'Your next capture rises as a full undead version of whatever it takes, not a plain zombie.',
+    },
     {
       id: 'purple_grave_leap',
       name: 'Grave Leap',

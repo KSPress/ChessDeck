@@ -5,11 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { boardThemeById, factionById } from '@/content';
 import {
-  BOARD_SIZE,
+  AETHER_CAP,
   getCard,
   getCrown,
   opponentOf,
-  squareOf,
+  timeRemainingMs,
   type MatchState,
   type Side,
   type Square,
@@ -17,13 +17,25 @@ import {
 import { HUMAN_SIDE, highlightsFor, useMatch } from '@/state/match';
 import { useProfile } from '@/state/profile';
 import { readCard, readCrown, type CardReadout } from '@/ui/describe';
-import { Board, type BoardRect } from '@/ui/components/Board';
+import type { BoardHit } from '@/ui/boardHit';
+import { Board } from '@/ui/components/Board';
 import { Button } from '@/ui/components/Button';
 import { Candlelight } from '@/ui/components/Candlelight';
 import { CardDetail } from '@/ui/components/CardDetail';
 import { CardFace, faceOfCardId } from '@/ui/components/CardFace';
 import { Hand } from '@/ui/components/Hand';
+import { IsometricBoard, isoHeightFor } from '@/ui/components/IsometricBoard';
 import { colors, fonts, glow, radius, space, text } from '@/ui/theme';
+
+type ViewMode = 'flat' | 'iso';
+
+/** "MM:SS" countdown, never negative. */
+function formatClock(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 export default function MatchScreen() {
   const router = useRouter();
@@ -33,7 +45,8 @@ export default function MatchScreen() {
   const { state, thinking, selected, pending, notice, opponentName } = store;
   const equippedBoard = useProfile((s) => s.equipped.board);
 
-  const [boardRect, setBoardRect] = useState<BoardRect | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('flat');
+  const [boardHit, setBoardHit] = useState<BoardHit | null>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [inspectingIndex, setInspectingIndex] = useState<number | null>(null);
   const [hoveredSquare, setHoveredSquare] = useState<Square | null>(null);
@@ -44,19 +57,9 @@ export default function MatchScreen() {
     if (!state) router.replace('/');
   }, [state, router]);
 
-  /** Page coordinates to a board square, or null when outside the board. */
   const squareAt = useCallback(
-    (pageX: number, pageY: number): Square | null => {
-      if (!boardRect) return null;
-      const fx = (pageX - boardRect.x) / boardRect.size;
-      const fy = (pageY - boardRect.y) / boardRect.size;
-      if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1) return null;
-      const file = Math.floor(fx * BOARD_SIZE);
-      // Rank 0 is drawn along the bottom edge.
-      const rank = BOARD_SIZE - 1 - Math.floor(fy * BOARD_SIZE);
-      return squareOf(file, rank);
-    },
-    [boardRect],
+    (pageX: number, pageY: number): Square | null => boardHit?.squareAt(pageX, pageY) ?? null,
+    [boardHit],
   );
 
   const onGrab = useCallback(
@@ -95,19 +98,19 @@ export default function MatchScreen() {
 
   const theme = boardThemeById(equippedBoard);
   const player = state.players[HUMAN_SIDE];
-  const foe = state.players[opponentOf(HUMAN_SIDE)];
   const crown = getCrown(player.crownId);
 
-  const yourTurn = state.active === HUMAN_SIDE && state.status === 'active' && !thinking;
+  const battle = state.phase === 'battle' && state.status === 'active';
+  const targeting = pending.kind !== 'none' && draggingIndex === null;
   const chosen = pending.kind === 'none' ? [] : pending.targets;
   const highlights = highlightsFor(store);
 
   const chrome = insets.top + insets.bottom + 430;
-  const boardSize = Math.min(width - space.lg * 2, Math.max(220, height - chrome), 420);
+  const boardWidth = Math.min(width - space.lg * 2, Math.max(220, height - chrome), 420);
+  const boardHeight = viewMode === 'iso' ? isoHeightFor(boardWidth) : boardWidth;
   const handCardSize = Math.min(78, (width - space.lg * 2 - 56) / 4 - space.sm);
 
-  const powerReady =
-    player.powerCooldown === 0 && player.aether >= crown.powerCost && state.cardsLeft > 0;
+  const powerReady = battle && player.powerReadyAtMs <= state.clockMs && player.aether >= crown.powerCost;
 
   // The readout follows whatever the player is touching, and falls back to the
   // Crown so the panel is never an empty hole in the layout.
@@ -135,7 +138,15 @@ export default function MatchScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button">
           <Text style={styles.back}>‹ Leave</Text>
         </Pressable>
-        <Text style={styles.turnCount}>Turn {state.turn}</Text>
+        <Pressable
+          onPress={() => setViewMode((m) => (m === 'flat' ? 'iso' : 'flat'))}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={`Switch to ${viewMode === 'flat' ? 'isometric' : 'flat'} view`}
+          style={styles.viewToggle}
+        >
+          <Text style={styles.viewToggleText}>{viewMode === 'flat' ? '◇ Isometric' : '▭ Flat'}</Text>
+        </Pressable>
         <Pressable onPress={store.resign} hitSlop={12} accessibilityRole="button">
           <Text style={[styles.back, { color: colors.danger }]}>Resign</Text>
         </Pressable>
@@ -143,30 +154,38 @@ export default function MatchScreen() {
 
       <PlayerStrip state={state} side={opponentOf(HUMAN_SIDE)} label={opponentName} />
 
-      <TurnBanner
-        status={state.status}
-        thinking={thinking}
-        yourTurn={yourTurn}
-        targeting={pending.kind !== 'none' && draggingIndex === null}
-        opponentName={opponentName}
-        movesLeft={state.movesLeft}
-        cardsLeft={state.cardsLeft}
-      />
+      <MatchBanner state={state} thinking={thinking} targeting={targeting} opponentName={opponentName} />
 
-      <View style={styles.boardWrap}>
-        <Board
-          state={state}
-          targets={highlights.targets}
-          captures={highlights.captures}
-          selected={selected}
-          chosen={chosen}
-          hovered={hoveredSquare}
-          theme={theme}
-          size={boardSize}
-          onTapSquare={store.tapSquare}
-          onMeasure={setBoardRect}
-          humanSide={HUMAN_SIDE}
-        />
+      <View style={[styles.boardWrap, { minHeight: boardHeight + space.lg }]}>
+        {viewMode === 'flat' ? (
+          <Board
+            state={state}
+            targets={highlights.targets}
+            captures={highlights.captures}
+            selected={selected}
+            chosen={chosen}
+            hovered={hoveredSquare}
+            theme={theme}
+            size={boardWidth}
+            onTapSquare={store.tapSquare}
+            onMeasure={setBoardHit}
+            humanSide={HUMAN_SIDE}
+          />
+        ) : (
+          <IsometricBoard
+            state={state}
+            targets={highlights.targets}
+            captures={highlights.captures}
+            selected={selected}
+            chosen={chosen}
+            hovered={hoveredSquare}
+            theme={theme}
+            size={boardWidth}
+            onTapSquare={store.tapSquare}
+            onMeasure={setBoardHit}
+            humanSide={HUMAN_SIDE}
+          />
+        )}
       </View>
 
       <PlayerStrip state={state} side={HUMAN_SIDE} label="You" />
@@ -186,28 +205,22 @@ export default function MatchScreen() {
           style={[
             styles.power,
             pending.kind === 'power' ? styles.powerActive : null,
-            !powerReady || !yourTurn ? styles.powerDisabled : null,
+            !powerReady ? styles.powerDisabled : null,
           ]}
         >
           <Text style={styles.powerName} numberOfLines={1}>
             {crown.powerName}
           </Text>
           <Text style={styles.powerMeta}>
-            {player.powerCooldown > 0 ? `${player.powerCooldown} turn(s)` : `${crown.powerCost} aether`}
+            {player.powerReadyAtMs > state.clockMs
+              ? `${Math.ceil((player.powerReadyAtMs - state.clockMs) / 1000)}s`
+              : `${crown.powerCost} aether`}
           </Text>
         </Pressable>
 
         {pending.kind !== 'none' && draggingIndex === null ? (
           <Button label="Cancel" variant="ghost" onPress={store.cancel} style={{ flex: 1 }} />
-        ) : (
-          <Button
-            label="End turn"
-            variant="secondary"
-            onPress={store.endTurn}
-            disabled={!yourTurn}
-            style={{ flex: 1 }}
-          />
-        )}
+        ) : null}
       </View>
 
       <View style={[styles.handSlot, { paddingBottom: insets.bottom + space.sm }]}>
@@ -215,7 +228,7 @@ export default function MatchScreen() {
           hand={player.hand}
           nextCardId={player.deck[0] ?? null}
           aether={player.aether}
-          canPlay={yourTurn && state.cardsLeft > 0}
+          canPlay={battle}
           cardSize={handCardSize}
           draggingIndex={draggingIndex}
           inspectingIndex={inspectingIndex}
@@ -249,34 +262,37 @@ export default function MatchScreen() {
   );
 }
 
-/** The "Your turn" call, which snaps in whenever the state behind it changes. */
-function TurnBanner({
-  status,
+/**
+ * The banner above the board. Placement gets its own instructions; once the
+ * battle starts it carries the running match clock instead of a "your turn"
+ * call — there is no turn to announce any more.
+ */
+function MatchBanner({
+  state,
   thinking,
-  yourTurn,
   targeting,
   opponentName,
-  movesLeft,
-  cardsLeft,
 }: {
-  status: MatchState['status'];
+  state: MatchState;
   thinking: boolean;
-  yourTurn: boolean;
   targeting: boolean;
   opponentName: string;
-  movesLeft: number;
-  cardsLeft: number;
 }) {
-  const label =
-    status !== 'active'
-      ? 'Match over'
-      : thinking
-        ? `${opponentName} is thinking…`
-        : yourTurn
-          ? targeting
-            ? 'Choose a target'
-            : 'Your turn'
-          : 'Opponent’s turn';
+  let label: string;
+  let tint: string = colors.gold;
+
+  if (state.status !== 'active') {
+    label = 'Match over';
+  } else if (state.phase === 'placement') {
+    label = state.players[HUMAN_SIDE].crownPlaced
+      ? `Waiting for ${opponentName}…`
+      : 'Choose where to stand your Crown';
+  } else if (targeting) {
+    label = 'Choose a target';
+  } else {
+    label = 'The battle rages';
+    tint = colors.text;
+  }
 
   const pop = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -286,18 +302,14 @@ function TurnBanner({
 
   return (
     <View style={styles.banner}>
-      <Animated.Text
-        style={[
-          styles.bannerText,
-          { color: yourTurn ? colors.gold : colors.shadow, transform: [{ scale: pop }] },
-        ]}
-      >
+      <Animated.Text style={[styles.bannerText, { color: tint, transform: [{ scale: pop }] }]}>
         {label}
       </Animated.Text>
-      {status === 'active' ? (
-        <Text style={styles.actionPips}>
-          {movesLeft > 0 ? '◆' : '◇'} move · {cardsLeft > 0 ? '◆' : '◇'} card
-        </Text>
+      {state.status === 'active' && state.phase === 'battle' ? (
+        <View style={styles.clockRow}>
+          <Text style={styles.clockText}>{formatClock(timeRemainingMs(state))}</Text>
+          {thinking ? <Text style={styles.clockPulse}>{opponentName} moved</Text> : null}
+        </View>
       ) : null}
     </View>
   );
@@ -308,10 +320,10 @@ function PlayerStrip({ state, side, label }: { state: MatchState; side: Side; la
   const player = state.players[side];
   const crown = getCrown(player.crownId);
   const faction = factionById(player.factionId);
-  const active = state.active === side && state.status === 'active';
+  const fill = Math.max(0, Math.min(1, player.aether / AETHER_CAP));
 
   return (
-    <View style={[styles.strip, active ? styles.stripActive : null]}>
+    <View style={styles.strip}>
       <View style={[styles.stripCrown, { backgroundColor: faction.paper }]}>
         <Text style={{ fontSize: 17, color: faction.ink }}>{crown.glyph}</Text>
       </View>
@@ -319,18 +331,18 @@ function PlayerStrip({ state, side, label }: { state: MatchState; side: Side; la
         <Text style={styles.stripName} numberOfLines={1}>
           {label}
         </Text>
-        <Text style={text.tiny} numberOfLines={1}>
-          {faction.name}
-        </Text>
+        <View style={styles.aetherTrack}>
+          <View style={[styles.aetherFill, { width: `${fill * 100}%` }]} />
+        </View>
       </View>
-      <Stat glyph="✶" value={player.aether} tint={colors.aether} />
+      <Stat glyph="✶" value={player.aether.toFixed(1)} tint={colors.aether} />
       <Stat glyph="⊞" value={player.hand.length} tint={colors.textMuted} />
       <Stat glyph="☠" value={player.graveyard.length} tint={colors.textDim} />
     </View>
   );
 }
 
-function Stat({ glyph, value, tint }: { glyph: string; value: number; tint: string }) {
+function Stat({ glyph, value, tint }: { glyph: string; value: number | string; tint: string }) {
   return (
     <View style={styles.stat}>
       <Text style={{ fontSize: 11, color: tint }}>{glyph}</Text>
@@ -369,7 +381,7 @@ function GameOver({ state }: { state: MatchState }) {
         <Text style={styles.overlayTitle}>{drawn ? 'A Draw' : won ? 'Victory' : 'Defeat'}</Text>
         <Text style={[text.small, styles.overlayBody]}>
           {drawn
-            ? 'The turn limit ran out with the boards level.'
+            ? 'The clock ran out with the boards level.'
             : won
               ? 'The enemy Crown has fallen. Coins and trophies have been added to your account.'
               : 'Your Crown has fallen. You still earn a consolation purse.'}
@@ -393,7 +405,15 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm,
   },
   back: { fontFamily: fonts.display, fontSize: 15, color: colors.textMuted, letterSpacing: 0.4 },
-  turnCount: { fontFamily: fonts.body, fontSize: 12, color: colors.textDim },
+  viewToggle: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: space.md,
+    paddingVertical: 4,
+    backgroundColor: colors.surfaceAlt,
+  },
+  viewToggleText: { fontFamily: fonts.body, fontSize: 11, color: colors.textMuted, fontWeight: '700' },
   strip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -406,7 +426,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  stripActive: { borderColor: colors.gold, backgroundColor: colors.surfaceAlt },
   stripCrown: {
     width: 30,
     height: 30,
@@ -415,11 +434,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stripName: { fontFamily: fonts.display, fontSize: 15, color: colors.text, letterSpacing: 0.3 },
-  stat: { alignItems: 'center', minWidth: 26 },
+  aetherTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.surfaceAlt,
+    overflow: 'hidden',
+    marginTop: 4,
+    width: '80%',
+  },
+  aetherFill: { height: 4, borderRadius: 2, backgroundColor: colors.aether },
+  stat: { alignItems: 'center', minWidth: 30 },
   statValue: { fontFamily: fonts.body, fontSize: 13, fontWeight: '800' },
   banner: { alignItems: 'center', paddingVertical: space.xs },
-  bannerText: { fontFamily: fonts.display, fontSize: 20, letterSpacing: 1 },
-  actionPips: { fontFamily: fonts.body, fontSize: 11, color: colors.textDim, marginTop: 1 },
+  bannerText: { fontFamily: fonts.display, fontSize: 19, letterSpacing: 1 },
+  clockRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 2 },
+  clockText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
+  clockPulse: { fontFamily: fonts.body, fontSize: 10, color: colors.shadow },
   boardWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: space.xs },
   readoutSlot: { minHeight: 96, justifyContent: 'center', paddingHorizontal: space.lg, paddingTop: space.sm },
   notice: { fontFamily: fonts.body, fontSize: 12, color: colors.gold, textAlign: 'center' },

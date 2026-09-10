@@ -1,14 +1,37 @@
 import type { FactionDef } from '@/engine/types';
 
 /**
- * The five faction colours.
+ * The six factions.
  *
- * `paper` and `ink` are sampled straight from the printed card art so the
- * in-app card face matches the physical deck. Every faction fields its own
- * version of each chess archetype — the pawn you meet across the board is an
- * Orc Peon or a Dwarf Miner, never a generic pawn.
+ * `paper` and `ink` are sampled straight from the printed card art (Humans
+ * have no printed reference yet, so theirs is an original steel-and-parchment
+ * palette that keeps them visually distinct from all five colour factions).
+ * Every faction fields its own version of each chess archetype — the pawn you
+ * meet across the board is an Orc Peon or a Dwarf Miner, never a generic pawn
+ * — and, Humans excepted, exactly two fairy pieces drawn from real fairy-chess
+ * tradition.
+ *
+ * Economy is a second axis of identity, on top of the crown: Dwarves buy a
+ * faster flow of aether with a crown that barely moves; Elves buy the only
+ * true queen left in the game with a slower one. Orcs stay cheap card-by-card
+ * rather than through their regen rate. Undead run on a different axis
+ * altogether — Harvest, not aether, is their economy.
  */
 export const FACTIONS: FactionDef[] = [
+  {
+    id: 'human',
+    people: 'Human',
+    name: 'Freehold Banners',
+    theme: 'Balanced',
+    paper: '#7A6A52',
+    ink: '#F5EFE0',
+    crownId: 'human_king',
+    passive: { kind: 'none' },
+    passiveName: 'No Gimmick',
+    passiveBlurb: 'No faction passive, no fairy pieces. The baseline every other colour is measured against.',
+    blurb:
+      'Closest to classic chess of anyone at the table. Nothing here surprises you — which is the whole appeal in Normal Play.',
+  },
   {
     id: 'red',
     people: 'Orc',
@@ -19,9 +42,9 @@ export const FACTIONS: FactionDef[] = [
     crownId: 'orc_chieftain',
     passive: { kind: 'bloodlust' },
     passiveName: 'Bloodlust',
-    passiveBlurb: 'The first of your pieces to capture each turn may immediately move again.',
+    passiveBlurb: 'Any capture refunds that piece’s cooldown at once — strike, and be ready to strike again.',
     blurb:
-      'High-risk, high-reward. Red trades pieces cheerfully and turns every capture into another swing.',
+      'High-risk, high-reward. Red trades pieces cheerfully and turns every capture into another swing, deck built cheap so there is always another body to throw.',
   },
   {
     id: 'blue',
@@ -35,13 +58,13 @@ export const FACTIONS: FactionDef[] = [
     passiveName: 'Shieldwall',
     passiveBlurb: 'Any of your pieces standing beside another friendly piece is armored.',
     blurb:
-      'Slow, plated and immovable. Blue wins by making every exchange cost the enemy more than it costs them.',
+      'Slow, plated and immovable. The Throne barely moves, but the hold’s aether runs a quarter faster to make up for it.',
   },
   {
     id: 'green',
     people: 'Elf',
     name: 'Everroot Court',
-    theme: 'Regenerative',
+    theme: 'Precision',
     paper: '#4B795B',
     ink: '#FFFFFF',
     crownId: 'elf_queen',
@@ -49,35 +72,37 @@ export const FACTIONS: FactionDef[] = [
     passiveName: 'Regrowth',
     passiveBlurb: 'Gain 2 aether whenever one of your pieces is captured, and it joins your graveyard.',
     blurb:
-      'Nothing green loses is gone for long. Bodies return from the graveyard and losses fund the next play.',
+      'The only true queen left in the game, paid for with a slower flow of aether. Precise, evasive, and one bad trade from losing everything.',
   },
   {
     id: 'yellow',
     people: 'Gnome',
     name: 'Clockwork Consortium',
-    theme: 'Explosive',
+    theme: 'Spellcraft',
     paper: '#C7B64A',
     ink: '#454545',
     crownId: 'gnome_engineer',
     passive: { kind: 'explosive_capture' },
     passiveName: 'Explosive Capture',
     passiveBlurb: 'When one of your pieces captures, enemy pieces diagonally beside the target are destroyed too.',
+    deployNearCrown: true,
     blurb:
-      'Fewer pieces, louder ones. Yellow turns a single capture into a crater — and does not always mind who is standing in it.',
+      'Fewer pieces, louder ones. Every automaton but the Engineer himself has to be built standing next to him — this is a workshop, not an army.',
   },
   {
     id: 'purple',
     people: 'Undead',
     name: 'Barrow Legion',
-    theme: 'Swarm',
+    theme: 'Conversion',
     paper: '#6B4B79',
     ink: '#FFFFFF',
     crownId: 'barrow_king',
-    passive: { kind: 'undying' },
-    passiveName: 'Undying',
-    passiveBlurb: 'The first pawn you lose each turn claws its way back onto your muster row.',
+    passive: { kind: 'harvest' },
+    passiveName: 'Harvest',
+    passiveBlurb:
+      'A piece your Undead capture doesn’t die — it rises as a zombie under your control, still facing the way it used to.',
     blurb:
-      'A tide of cheap bodies that refuses to stay down. Purple wins on numbers and on pawns that stop being pawns.',
+      'Runs on a different economy entirely: not aether income, but every capture turned into another body on your own side of the line.',
   },
 ];
 
