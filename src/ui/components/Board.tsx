@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import { factionById, type BoardTheme } from '@/content';
@@ -16,6 +16,7 @@ import {
   type Square,
 } from '@/engine';
 import type { BoardHit } from '../boardHit';
+import { ICON_SHIELD } from '../icons';
 import { colors, radius } from '../theme';
 
 interface Props {
@@ -353,10 +354,12 @@ function PieceChip({
 
       {resting > 0 ? <CooldownRing size={chip} progress={resting} color={faction.ink} /> : null}
 
-      {shielded || rooted || submerged ? (
+      {shielded ? (
+        <Image source={ICON_SHIELD} style={[styles.status, { bottom: -chip * 0.06, width: chip * 0.32, height: chip * 0.32 }]} />
+      ) : rooted || submerged ? (
         <View style={[styles.status, { bottom: -chip * 0.06 }]}>
           <Text style={{ fontSize: chip * 0.26 }} allowFontScaling={false}>
-            {submerged ? '⊟' : shielded ? '⛨' : '❉'}
+            {submerged ? '⊟' : '❉'}
           </Text>
         </View>
       ) : null}

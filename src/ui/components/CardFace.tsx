@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { factionById } from '@/content';
 import { getCard, getPiece } from '@/engine';
 import type { Archetype, Card, CrownDef, MoveRule, PieceDef } from '@/engine';
+import { RETICLE } from '../icons';
 import { fonts, radius } from '../theme';
 import { MovementGrid } from './MovementGrid';
 
@@ -254,6 +255,13 @@ export function CardFace({
       {tag ? (
         <View style={[styles.tag, { bottom: size * 0.05, right: size * 0.05 }]}>
           <Text style={{ fontSize: size * 0.09, fontWeight: '800', color: paper }}>{tag}</Text>
+        </View>
+      ) : null}
+
+      {/* A held or dragging card gets a targeting reticle, not just a border. */}
+      {selected ? (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Image source={RETICLE} style={StyleSheet.absoluteFill} />
         </View>
       ) : null}
     </Animated.View>

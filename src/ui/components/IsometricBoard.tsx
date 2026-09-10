@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Polygon } from 'react-native-svg';
 
 import { factionById, type BoardTheme } from '@/content';
@@ -13,6 +13,7 @@ import {
   type Square,
 } from '@/engine';
 import type { BoardHit } from '../boardHit';
+import { ICON_SHIELD } from '../icons';
 import { diamondPoints, project } from '../isometric';
 import { colors } from '../theme';
 
@@ -234,10 +235,12 @@ function IsoPiece({
       {resting > 0 ? (
         <View style={[styles.pip, { backgroundColor: colors.aether, opacity: 0.5 + resting * 0.5 }]} />
       ) : null}
-      {shielded || rooted || submerged ? (
+      {shielded ? (
+        <Image source={ICON_SHIELD} style={[styles.status, { width: chip * 0.3, height: chip * 0.3 }]} />
+      ) : rooted || submerged ? (
         <View style={styles.status}>
           <Text style={{ fontSize: chip * 0.24 }} allowFontScaling={false}>
-            {submerged ? '⊟' : shielded ? '⛨' : '❉'}
+            {submerged ? '⊟' : '❉'}
           </Text>
         </View>
       ) : null}

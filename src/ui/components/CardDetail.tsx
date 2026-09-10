@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, StyleSheet, Text, View } from 'react-native';
 
 import { factionById } from '@/content';
 import type { CardReadout } from '../describe';
+import { ICON_HAND } from '../icons';
 import { colors, fonts, radius, space } from '../theme';
 
 interface Props {
@@ -69,7 +70,12 @@ export function CardDetail({ readout, hint }: Props) {
 
         <Text style={styles.blurb}>{readout.blurb}</Text>
 
-        {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+        {hint ? (
+          <View style={styles.hintRow}>
+            <Image source={ICON_HAND} style={styles.hintIcon} />
+            <Text style={styles.hint}>{hint}</Text>
+          </View>
+        ) : null}
       </View>
     </Animated.View>
   );
@@ -121,12 +127,13 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 2,
   },
+  hintRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  hintIcon: { width: 12, height: 12, opacity: 0.85 },
   hint: {
     fontFamily: fonts.body,
     fontSize: 10,
     color: colors.goldDim,
     fontWeight: '700',
     letterSpacing: 0.4,
-    marginTop: 3,
   },
 });

@@ -1,6 +1,7 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 
 import { useProfile } from '@/state/profile';
+import { ICON_COIN } from '../icons';
 import { colors, fonts, radius, space } from '../theme';
 
 /** The coins / gems / trophies readout carried in every dashboard header. */
@@ -8,17 +9,27 @@ export function CurrencyBar() {
   const { coins, gems, trophies } = useProfile();
   return (
     <View style={styles.row}>
-      <Pill glyph="🪙" value={coins} tint={colors.gold} />
+      <Pill icon={ICON_COIN} value={coins} tint={colors.gold} />
       <Pill glyph="💎" value={gems} tint={colors.aether} />
       <Pill glyph="🏆" value={trophies} tint={colors.shadow} />
     </View>
   );
 }
 
-function Pill({ glyph, value, tint }: { glyph: string; value: number; tint: string }) {
+function Pill({
+  glyph,
+  icon,
+  value,
+  tint,
+}: {
+  glyph?: string;
+  icon?: ImageSourcePropType;
+  value: number;
+  tint: string;
+}) {
   return (
     <View style={[styles.pill, { borderColor: tint }]}>
-      <Text style={styles.glyph}>{glyph}</Text>
+      {icon ? <Image source={icon} style={styles.icon} /> : <Text style={styles.glyph}>{glyph}</Text>}
       <Text style={[styles.value, { color: tint }]}>{value.toLocaleString()}</Text>
     </View>
   );
@@ -37,5 +48,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   glyph: { fontSize: 10 },
+  icon: { width: 12, height: 12 },
   value: { fontFamily: fonts.body, fontSize: 12, fontWeight: '700' },
 });

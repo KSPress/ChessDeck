@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { boardThemeById, factionById } from '@/content';
@@ -23,8 +23,11 @@ import { Button } from '@/ui/components/Button';
 import { Candlelight } from '@/ui/components/Candlelight';
 import { CardDetail } from '@/ui/components/CardDetail';
 import { CardFace, faceOfCardId } from '@/ui/components/CardFace';
+import { ElixirBar } from '@/ui/components/ElixirBar';
 import { Hand } from '@/ui/components/Hand';
+import { PowerGauge } from '@/ui/components/PowerGauge';
 import { IsometricBoard, isoHeightFor } from '@/ui/components/IsometricBoard';
+import { ICON_BANNER, ICON_COIN, ICON_CURSOR, ICON_LOG, ICON_MEAT } from '@/ui/icons';
 import { colors, fonts, glow, radius, space, text } from '@/ui/theme';
 
 type ViewMode = 'flat' | 'iso';
@@ -111,6 +114,10 @@ export default function MatchScreen() {
   const handCardSize = Math.min(78, (width - space.lg * 2 - 56) / 4 - space.sm);
 
   const powerReady = battle && player.powerReadyAtMs <= state.clockMs && player.aether >= crown.powerCost;
+  const powerCooldownFraction =
+    crown.powerCooldownMs > 0
+      ? 1 - Math.max(0, player.powerReadyAtMs - state.clockMs) / crown.powerCooldownMs
+      : 1;
 
   // The readout follows whatever the player is touching, and falls back to the
   // Crown so the panel is never an empty hole in the layout.
@@ -216,6 +223,9 @@ export default function MatchScreen() {
               ? `${Math.ceil((player.powerReadyAtMs - state.clockMs) / 1000)}s`
               : `${crown.powerCost} aether`}
           </Text>
+          <View style={styles.powerGauge}>
+            <PowerGauge fraction={powerCooldownFraction} height={8} />
+          </View>
         </Pressable>
 
         {pending.kind !== 'none' && draggingIndex === null ? (
@@ -280,15 +290,17 @@ function MatchBanner({
 }) {
   let label: string;
   let tint: string = colors.gold;
+  let showTapHint = false;
 
   if (state.status !== 'active') {
     label = 'Match over';
   } else if (state.phase === 'placement') {
-    label = state.players[HUMAN_SIDE].crownPlaced
-      ? `Waiting for ${opponentName}…`
-      : 'Choose where to stand your Crown';
+    const waiting = state.players[HUMAN_SIDE].crownPlaced;
+    label = waiting ? `Waiting for ${opponentName}…` : 'Choose where to stand your Crown';
+    showTapHint = !waiting;
   } else if (targeting) {
     label = 'Choose a target';
+    showTapHint = true;
   } else {
     label = 'The battle rages';
     tint = colors.text;
@@ -302,9 +314,12 @@ function MatchBanner({
 
   return (
     <View style={styles.banner}>
-      <Animated.Text style={[styles.bannerText, { color: tint, transform: [{ scale: pop }] }]}>
-        {label}
-      </Animated.Text>
+      <Animated.View style={[styles.bannerRow, { transform: [{ scale: pop }] }]}>
+        {showTapHint ? <Image source={ICON_CURSOR} style={styles.bannerIcon} /> : null}
+        <Animated.Text style={[styles.bannerText, { color: tint }]} numberOfLines={2}>
+          {label}
+        </Animated.Text>
+      </Animated.View>
       {state.status === 'active' && state.phase === 'battle' ? (
         <View style={styles.clockRow}>
           <Text style={styles.clockText}>{formatClock(timeRemainingMs(state))}</Text>
@@ -332,7 +347,7 @@ function PlayerStrip({ state, side, label }: { state: MatchState; side: Side; la
           {label}
         </Text>
         <View style={styles.aetherTrack}>
-          <View style={[styles.aetherFill, { width: `${fill * 100}%` }]} />
+          <ElixirBar factionId={player.factionId} fraction={fill} height={14} />
         </View>
       </View>
       <Stat glyph="✶" value={player.aether.toFixed(1)} tint={colors.aether} />
@@ -378,6 +393,7 @@ function GameOver({ state }: { state: MatchState }) {
           },
         ]}
       >
+        {won ? <Image source={ICON_BANNER} style={styles.overlayBanner} /> : null}
         <Text style={styles.overlayTitle}>{drawn ? 'A Draw' : won ? 'Victory' : 'Defeat'}</Text>
         <Text style={[text.small, styles.overlayBody]}>
           {drawn
@@ -386,6 +402,13 @@ function GameOver({ state }: { state: MatchState }) {
               ? 'The enemy Crown has fallen. Coins and trophies have been added to your account.'
               : 'Your Crown has fallen. You still earn a consolation purse.'}
         </Text>
+        {won ? (
+          <View style={styles.overlayLoot}>
+            <Image source={ICON_COIN} style={styles.overlayLootIcon} />
+            <Image source={ICON_MEAT} style={styles.overlayLootIcon} />
+            <Image source={ICON_LOG} style={styles.overlayLootIcon} />
+          </View>
+        ) : null}
         {state.log.length > 0 ? (
           <Text style={[text.tiny, styles.overlayLog]}>{state.log[state.log.length - 1]?.text}</Text>
         ) : null}
@@ -434,19 +457,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stripName: { fontFamily: fonts.display, fontSize: 15, color: colors.text, letterSpacing: 0.3 },
-  aetherTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.surfaceAlt,
-    overflow: 'hidden',
-    marginTop: 4,
-    width: '80%',
-  },
-  aetherFill: { height: 4, borderRadius: 2, backgroundColor: colors.aether },
+  aetherTrack: { marginTop: 4, width: '80%' },
   stat: { alignItems: 'center', minWidth: 30 },
   statValue: { fontFamily: fonts.body, fontSize: 13, fontWeight: '800' },
-  banner: { alignItems: 'center', paddingVertical: space.xs },
-  bannerText: { fontFamily: fonts.display, fontSize: 19, letterSpacing: 1 },
+  banner: { alignItems: 'center', paddingVertical: space.xs, paddingHorizontal: space.xl },
+  bannerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: space.xs },
+  bannerIcon: { width: 16, height: 16, marginTop: 4, flexShrink: 0 },
+  bannerText: { fontFamily: fonts.display, fontSize: 19, letterSpacing: 1, textAlign: 'center', flexShrink: 1 },
   clockRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 2 },
   clockText: {
     fontFamily: fonts.body,
@@ -477,6 +494,7 @@ const styles = StyleSheet.create({
   powerDisabled: { opacity: 0.38 },
   powerName: { fontFamily: fonts.display, fontSize: 15, color: colors.text, letterSpacing: 0.3 },
   powerMeta: { fontFamily: fonts.body, fontSize: 11, color: colors.textMuted },
+  powerGauge: { marginTop: 6, alignSelf: 'stretch' },
   handSlot: { paddingHorizontal: space.lg, paddingTop: space.md },
   ghost: { position: 'absolute', top: 0, left: 0 },
   overlay: {
@@ -501,7 +519,10 @@ const styles = StyleSheet.create({
     gap: space.md,
     alignItems: 'center',
   },
+  overlayBanner: { width: 40, height: 40, marginBottom: -space.xs },
   overlayTitle: { fontFamily: fonts.display, fontSize: 34, color: colors.gold, letterSpacing: 1 },
   overlayBody: { textAlign: 'center' },
+  overlayLoot: { flexDirection: 'row', gap: space.md },
+  overlayLootIcon: { width: 28, height: 28 },
   overlayLog: { textAlign: 'center', fontStyle: 'italic' },
 });

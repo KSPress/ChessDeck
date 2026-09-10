@@ -1,10 +1,11 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { useProfile } from '@/state/profile';
 import { Button } from '@/ui/components/Button';
 import { CurrencyBar } from '@/ui/components/CurrencyBar';
 import { Panel } from '@/ui/components/Panel';
 import { Screen } from '@/ui/components/Screen';
+import { ICON_BANNER, ICON_SWORDS } from '@/ui/icons';
 import { colors, fonts, radius, space, text } from '@/ui/theme';
 
 /** What a guild will offer once the social backend exists. */
@@ -33,7 +34,7 @@ export default function GuildScreen() {
 
       <Panel title="Your banner">
         <View style={styles.banner}>
-          <Text style={styles.bannerGlyph}>⛨</Text>
+          <Image source={ICON_BANNER} style={styles.bannerArt} />
           <View style={{ flex: 1 }}>
             <Text style={text.heading}>{name}</Text>
             <Text style={text.small}>{trophies.toLocaleString()} trophies · unaffiliated</Text>
@@ -42,15 +43,25 @@ export default function GuildScreen() {
       </Panel>
 
       <Panel title="Coming with guilds">
-        {FEATURES.map((feature) => (
-          <View key={feature.title} style={styles.feature}>
-            <Text style={styles.featureGlyph}>{feature.glyph}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.featureTitle}>{feature.title}</Text>
-              <Text style={text.small}>{feature.blurb}</Text>
+        {FEATURES.map((feature) =>
+          feature.glyph === '⚔' ? (
+            <View key={feature.title} style={styles.feature}>
+              <Image source={ICON_SWORDS} style={styles.featureArt} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.featureTitle}>{feature.title}</Text>
+                <Text style={text.small}>{feature.blurb}</Text>
+              </View>
             </View>
-          </View>
-        ))}
+          ) : (
+            <View key={feature.title} style={styles.feature}>
+              <Text style={styles.featureGlyph}>{feature.glyph}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.featureTitle}>{feature.title}</Text>
+                <Text style={text.small}>{feature.blurb}</Text>
+              </View>
+            </View>
+          ),
+        )}
       </Panel>
     </Screen>
   );
@@ -68,8 +79,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: space.md,
   },
-  bannerGlyph: { fontSize: 34, color: colors.gold },
+  bannerArt: { width: 38, height: 38 },
   feature: { flexDirection: 'row', gap: space.md, alignItems: 'flex-start' },
   featureGlyph: { fontSize: 20, width: 26, textAlign: 'center' },
+  featureArt: { width: 22, height: 22, marginHorizontal: 2, marginTop: 1 },
   featureTitle: { fontFamily: fonts.display, fontSize: 15, fontWeight: '700', color: colors.text },
 });

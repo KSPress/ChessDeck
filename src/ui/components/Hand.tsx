@@ -1,7 +1,8 @@
 import { useMemo, useRef } from 'react';
-import { PanResponder, StyleSheet, Text, View } from 'react-native';
+import { Image, PanResponder, StyleSheet, Text, View } from 'react-native';
 
 import { getCard, type CardId } from '@/engine';
+import { ICON_CYCLE } from '../icons';
 import { colors, fonts, radius, space } from '../theme';
 import { CardFace, faceOfCardId } from './CardFace';
 
@@ -95,11 +96,14 @@ export function Hand({
     <View style={styles.row}>
       <View style={styles.nextSlot}>
         <Text style={styles.nextLabel}>Next</Text>
-        {nextCardId ? (
-          <CardFace face={faceOfCardId(nextCardId)} size={cardSize * 0.62} dimmed />
-        ) : (
-          <View style={[styles.nextEmpty, { width: cardSize * 0.62, height: cardSize * 0.62 }]} />
-        )}
+        <View>
+          {nextCardId ? (
+            <CardFace face={faceOfCardId(nextCardId)} size={cardSize * 0.62} dimmed />
+          ) : (
+            <View style={[styles.nextEmpty, { width: cardSize * 0.62, height: cardSize * 0.62 }]} />
+          )}
+          {nextCardId ? <Image source={ICON_CYCLE} style={styles.cycleBadge} /> : null}
+        </View>
       </View>
 
       <View style={styles.cards}>
@@ -150,5 +154,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: colors.border,
   },
+  cycleBadge: { position: 'absolute', top: -6, right: -6, width: 16, height: 16, opacity: 0.9 },
   cards: { flex: 1, flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'flex-end' },
 });
